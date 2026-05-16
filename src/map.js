@@ -1,0 +1,294 @@
+/**
+ * map.js — MapLibre GL JS wrapper for Bikepacker Navigator.
+ *
+ * Renders the route line and typed waypoint markers.
+ * Tile source: OpenFreeMap (free, no API key required).
+ *
+ * @module map
+ */
+
+import maplibregl from 'maplibre-gl';
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const TILE_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
+
+/** Marker colours keyed by waypoint type — matches MD3 colour system. */
+const MARKER_COLORS = {
+  water: '#4fc3f7', // Light blue
+  resupply: '#ffb74d', // Amber
+  camping: '#81c784', // Soft green
+  navigation: '#9e9e9e', // Grey — subdued, not a resource
+};
+
+const MARKER_SIZES = {
+  water: 14,
+  resupply: 14,
+  camping: 14,
+  navigation: 8,
+};
+
+/** Tracks active markers per map instance so they can be removed on update. */
+const mapMarkers = new WeakMap();
+
+// ---------------------------------------------------------------------------
+// Map initialisation
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates and mounts a MapLibre map into the given container element,
+ * then adds the route line and waypoint markers.
+ *
+ * @param {string | HTMLElement} container  - Element ID or DOM element
+ * @param {import('./gpx.js').RouteContext} route
+ * @returns {maplibregl.Map}
+ */
+export function initMap(container, route) {
+  const { bounds, trackPoints, waypoints } = route;
+
+  const map = new maplibregl.Map({
+    container,
+    style: TILE_STYLE,
+    bounds: [
+      [bounds.minLon, bounds.minLat],
+      [bounds.maxLon, bounds.maxLat],
+    ],
+    fitBoundsOptions: { padding: 40 },
+    // Attribution required by tile provider
+    attributionControl: { compact: true },
+  });
+
+  // Initialise marker tracking for this map instance
+  mapMarkers.set(map, []);
+
+  map.on('load', () => {
+    addRouteLayer(map, trackPoints);
+    addWaypointMarkers(map, waypoints);
+  });
+
+  // Add navigation controls (zoom +/-) — top-right, out of thumb reach
+  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+
+  // Geolocation — shows a "locate me" button; tracks the rider's position
+  // with a pulsing dot and optional heading arrow as they move.
+  map.addControl(
+    new maplibregl.GeolocateControl({
+      positionOptions: { enableHighAccuracy: true },
+      trackUserLocation: true,
+      showUserHeading: true,
+    }),
+    'top-right',
+  );
+
+  return map;
+}
+
+// ---------------------------------------------------------------------------
+// Route line
+// ---------------------------------------------------------------------------
+
+/**
+ * Adds the route as a GeoJSON LineString layer.
+ * @param {maplibregl.Map} map
+ * @param {Array<[number, number]>} trackPoints  - [lat, lon] pairs
+ */
+function addRouteLayer(map, trackPoints) {
+  // MapLibre expects [lon, lat] (GeoJSON standard)
+  const coordinates = trackPoints.map(([lat, lon]) => [lon, lat]);
+
+  map.addSource('route', {
+    type: 'geojson',
+    data: {
+      type: 'Feature',
+      geometry: { type: 'LineString', coordinates },
+      properties: {},
+    },
+  });
+
+  // Subtle glow layer underneath
+  map.addLayer({
+    id: 'route-glow',
+    type: 'line',
+    source: 'route',
+    layout: { 'line-join': 'round', 'line-cap': 'round' },
+    paint: {
+      'line-color': '#78dc95',
+      'line-width': 8,
+      'line-opacity': 0.25,
+      'line-blur': 4,
+    },
+  });
+
+  // Main route line
+  map.addLayer({
+    id: 'route-line',
+    type: 'line',
+    source: 'route',
+    layout: { 'line-join': 'round', 'line-cap': 'round' },
+    paint: {
+      'line-color': '#78dc95',
+      'line-width': 3,
+      'line-opacity': 0.9,
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Waypoint markers
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates a circular SVG marker element for a waypoint type.
+ * @param {'water' | 'resupply' | 'camping' | 'navigation'} type
+ * @returns {HTMLElement}
+ */
+export function createMarkerElement(type) {
+  const size = MARKER_SIZES[type] ?? 10;
+  const color = MARKER_COLORS[type] ?? '#9e9e9e';
+
+  const el = document.createElement('div');
+  el.className = `map-marker map-marker--${type}`;
+  el.setAttribute('role', 'button');
+  el.setAttribute('tabindex', '0');
+  el.setAttribute('aria-label', `${type} waypoint`);
+  el.style.cssText = `
+    width: ${size}px;
+    height: ${size}px;
+    background: ${color};
+    border: 2px solid rgba(0,0,0,0.5);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+    transition: transform 0.15s ease;
+  `;
+
+  el.addEventListener('mouseenter', () => {
+    el.style.transform = 'scale(1.4)';
+  });
+  el.addEventListener('mouseleave', () => {
+    el.style.transform = 'scale(1)';
+  });
+
+  return el;
+}
+
+/**
+ * Builds the HTML content for a waypoint popup.
+ * @param {import('./gpx.js').Waypoint} waypoint
+ * @returns {string}
+ */
+export function buildPopupHTML(waypoint) {
+  const typeLabel =
+    {
+      water: '💧 Water',
+      resupply: '🛒 Resupply',
+      camping: '⛺ Camp',
+      navigation: '📍 Note',
+    }[waypoint.type] ?? '📍 Note';
+
+  const distanceStr = waypoint.distanceFromStartMi.toFixed(1);
+
+  const showReliability =
+    (waypoint.type === 'water' || waypoint.type === 'camping') && waypoint.reliability != null;
+
+  const reliabilityBar = showReliability
+    ? `<div class="popup-reliability">
+         <span class="popup-reliability__label">Reliability</span>
+         <div class="popup-reliability__track">
+           <div class="popup-reliability__fill" style="width:${waypoint.reliability}%"></div>
+         </div>
+         <span class="popup-reliability__pct">${waypoint.reliability}%</span>
+       </div>`
+    : '';
+
+  const tierBadge =
+    waypoint.type === 'camping' && waypoint.tier
+      ? `<span class="popup-tier popup-tier--${waypoint.tier}">${
+          waypoint.tier === 'dispersed' ? 'Dispersed' : 'Campground'
+        }</span>`
+      : '';
+
+  const desc = waypoint.description ? `<p class="popup-desc">${waypoint.description}</p>` : '';
+
+  return `
+    <div class="map-popup">
+      <p class="popup-type">${typeLabel} · ${distanceStr} mi</p>
+      <p class="popup-name">${waypoint.name}</p>
+      ${tierBadge}
+      ${desc}
+      ${reliabilityBar}
+    </div>
+  `;
+}
+
+/**
+ * Adds a MapLibre Marker + Popup for every waypoint and tracks them so they
+ * can be removed by updateMapWaypoints. Navigation waypoints are rendered
+ * smaller and without popups.
+ * @param {maplibregl.Map} map
+ * @param {import('./gpx.js').Waypoint[]} waypoints
+ */
+function addWaypointMarkers(map, waypoints) {
+  const markers = [];
+
+  for (const waypoint of waypoints) {
+    const el = createMarkerElement(waypoint.type);
+
+    const marker = new maplibregl.Marker({ element: el }).setLngLat([waypoint.lon, waypoint.lat]);
+
+    // Navigation turn cues don't need popups
+    if (waypoint.type !== 'navigation') {
+      const popup = new maplibregl.Popup({
+        offset: 12,
+        className: 'bp-popup',
+        closeButton: false,
+        maxWidth: '260px',
+      }).setHTML(buildPopupHTML(waypoint));
+
+      marker.setPopup(popup);
+    }
+
+    marker.addTo(map);
+    markers.push(marker);
+  }
+
+  mapMarkers.set(map, markers);
+}
+
+/**
+ * Replaces all waypoint markers on the map with a fresh set built from the
+ * provided waypoints array. Call this after async enrichment (water, camp)
+ * updates route.waypoints.
+ *
+ * @param {maplibregl.Map | null} map
+ * @param {import('./gpx.js').Waypoint[]} waypoints
+ */
+export function updateMapWaypoints(map, waypoints) {
+  if (!map) return;
+
+  // Remove every currently tracked marker
+  const existing = mapMarkers.get(map) ?? [];
+  for (const marker of existing) {
+    marker.remove();
+  }
+
+  // Re-add the full updated set
+  addWaypointMarkers(map, waypoints);
+}
+
+// ---------------------------------------------------------------------------
+// Map cleanup
+// ---------------------------------------------------------------------------
+
+/**
+ * Removes the map instance and frees GL resources.
+ * Call this before re-initialising the map with a new route.
+ * @param {maplibregl.Map | null | undefined} map
+ */
+export function destroyMap(map) {
+  if (!map) return;
+  mapMarkers.delete(map);
+  map.remove();
+}
