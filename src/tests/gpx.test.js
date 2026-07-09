@@ -147,6 +147,12 @@ describe('classifyWaypoint', () => {
   it('checks description as well as name', () => {
     expect(classifyWaypoint('Point A', 'water cache here')).toBe('water');
   });
+
+  it('returns summit for pass/peak keywords', () => {
+    expect(classifyWaypoint('Georgia Pass')).toBe('summit');
+    expect(classifyWaypoint('Elbert Peak')).toBe('summit');
+    expect(classifyWaypoint('Mountain Crest')).toBe('summit');
+  });
 });
 
 // ---------------------------------------------------------------------------

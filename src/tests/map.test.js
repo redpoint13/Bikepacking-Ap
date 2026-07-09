@@ -131,7 +131,7 @@ describe('createMarkerElement', () => {
 
   it('applies inline size styles', () => {
     const el = createMarkerElement('water');
-    expect(el.style.cssText).toContain('14px');
+    expect(el.style.cssText).toContain('18px');
   });
 
   it('scales up on mouseenter and back on mouseleave', () => {

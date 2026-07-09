@@ -6,6 +6,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { parseGPX } from '../gpx.js';
 import {
   fetchOSMWater,
+  fetchUSGSFlowData,
   fetchUSGSLocations,
   isNearRoute,
   mergeWaterSources,
@@ -304,5 +305,78 @@ describe('fetchOSMWater', () => {
     const result = await fetchOSMWater(bounds);
     expect(result).toEqual([]);
     vi.unstubAllGlobals();
+  });
+});
+
+describe('fetchUSGSFlowData', () => {
+  it('returns a Map of siteId to flow rate on success', async () => {
+    const mockData = {
+      value: {
+        timeSeries: [
+          {
+            sourceInfo: { siteCode: [{ value: '09505200' }] },
+            values: [{ value: [{ value: '12.5' }] }],
+          },
+          {
+            sourceInfo: { siteCode: [{ value: '09505500' }] },
+            values: [{ value: [{ value: '0.0' }] }],
+          },
+        ],
+      },
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => mockData,
+      }),
+    );
+
+    const result = await fetchUSGSFlowData(['09505200', '09505500']);
+    expect(result.get('09505200')).toBe(12.5);
+    expect(result.get('09505500')).toBe(0.0);
+    vi.unstubAllGlobals();
+  });
+
+  it('returns empty Map on error', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Network error')));
+    const result = await fetchUSGSFlowData(['09505200']);
+    expect(result.size).toBe(0);
+    vi.unstubAllGlobals();
+  });
+});
+
+describe('mergeWaterSources with flowMap', () => {
+  const usgsFeature = {
+    id: 'site-1',
+    geometry: { coordinates: [-111.65, 35.199] },
+    properties: {
+      monitoringLocationNumber: '09505200',
+      monitoringLocationName: 'Oak Creek near Flagstaff',
+      monitoringLocationType: 'Stream',
+    },
+  };
+
+  it('sets reliability to 90% when flow is positive', () => {
+    const flowMap = new Map([['09505200', 12.5]]);
+    const merged = mergeWaterSources(route, [usgsFeature], [], flowMap);
+    const station = merged.find((w) => w.id === 'usgs-09505200');
+    expect(station.reliability).toBe(90);
+    expect(station.description).toContain('Flowing: 12.5 cfs');
+  });
+
+  it('sets reliability to 0% when flow is zero', () => {
+    const flowMap = new Map([['09505200', 0.0]]);
+    const merged = mergeWaterSources(route, [usgsFeature], [], flowMap);
+    const station = merged.find((w) => w.id === 'usgs-09505200');
+    expect(station.reliability).toBe(0);
+    expect(station.description).toContain('reports DRY');
+  });
+
+  it('falls back to static reliability when site is missing from flowMap', () => {
+    const merged = mergeWaterSources(route, [usgsFeature], [], new Map());
+    const station = merged.find((w) => w.id === 'usgs-09505200');
+    expect(station.reliability).toBe(75); // static stream default
+    expect(station.description).toBe('USGS monitoring station');
   });
 });

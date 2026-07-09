@@ -136,3 +136,68 @@ export async function clearEnrichment() {
     tx.onerror = (e) => reject(e.target.error);
   });
 }
+
+const OPTIONS_KEY = 'current-options';
+
+/**
+ * Persists the plan options (overrides, thresholds, daily mileage).
+ * @param {object} options
+ * @returns {Promise<void>}
+ */
+export async function savePlanOptions(options) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).put({ options, savedAt: Date.now() }, OPTIONS_KEY);
+    tx.oncomplete = () => resolve();
+    tx.onerror = (e) => reject(e.target.error);
+  });
+}
+
+/**
+ * Loads the persisted plan options.
+ * @returns {Promise<object | null>}
+ */
+export async function loadPlanOptions() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const req = tx.objectStore(STORE_NAME).get(OPTIONS_KEY);
+    req.onsuccess = (e) => resolve(e.target.result?.options ?? null);
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+/**
+ * Clears the persisted plan options.
+ * @returns {Promise<void>}
+ */
+export async function clearPlanOptions() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).delete(OPTIONS_KEY);
+    tx.oncomplete = () => resolve();
+    tx.onerror = (e) => reject(e.target.error);
+  });
+}
+
+/**
+ * Compiles and returns the complete active plan export bundle.
+ * @returns {Promise<object>}
+ */
+export async function exportPlanBundle() {
+  const stored = await loadRoute();
+  if (!stored) throw new Error('No route loaded to export.');
+
+  const waypoints = (await loadEnrichment().catch(() => [])) || [];
+  const options = await loadPlanOptions().catch(() => null);
+
+  return {
+    version: '1.0',
+    filename: stored.filename || 'route.gpx',
+    gpxText: stored.gpxText,
+    waypoints: waypoints,
+    options: options,
+  };
+}

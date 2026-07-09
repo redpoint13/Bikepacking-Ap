@@ -10,9 +10,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   clearEnrichment,
   clearRoute,
+  exportPlanBundle,
   loadEnrichment,
   loadRoute,
   saveEnrichment,
+  savePlanOptions,
   saveRoute,
 } from '../storage.js';
 
@@ -134,5 +136,25 @@ describe('clearEnrichment', () => {
 
   it('is a no-op when nothing is stored', async () => {
     await expect(clearEnrichment()).resolves.not.toThrow();
+  });
+});
+
+describe('exportPlanBundle', () => {
+  it('throws an error if no route is stored', async () => {
+    await clearRoute();
+    await expect(exportPlanBundle()).rejects.toThrow('No route loaded to export.');
+  });
+
+  it('compiles route GPX, enrichment waypoints, and plan options', async () => {
+    await saveRoute('gpx-content', 'coconino.gpx');
+    await saveEnrichment([{ id: 'wp-1', type: 'water' }]);
+    await savePlanOptions({ targetDailyMiles: 45 });
+
+    const bundle = await exportPlanBundle();
+    expect(bundle.version).toBe('1.0');
+    expect(bundle.filename).toBe('coconino.gpx');
+    expect(bundle.gpxText).toBe('gpx-content');
+    expect(bundle.waypoints).toEqual([{ id: 'wp-1', type: 'water' }]);
+    expect(bundle.options.targetDailyMiles).toBe(45);
   });
 });

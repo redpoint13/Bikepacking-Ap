@@ -78,6 +78,7 @@ const WAYPOINT_KEYWORDS = {
     'hotel',
     'motel',
   ],
+  summit: ['pass', 'summit', 'peak', 'mountain', 'mount', 'ridge', 'saddle', 'crest', 'elevation'],
 };
 
 // ---------------------------------------------------------------------------
@@ -278,7 +279,10 @@ export function parseGPX(xmlString) {
     const description = getText(wpt, 'desc') || getText(wpt, 'cmt') || '';
     const type = classifyWaypoint(wptName, description);
     const reliability = defaultReliability(type, wptName);
-    const distanceFromStartMi = distanceFromStart(lat, lon, trackPoints);
+    const nearestIdx = nearestTrackPointIndex(lat, lon, trackPoints);
+    const distanceFromStartMi = computeRouteDistance(trackPoints.slice(0, nearestIdx + 1));
+    const nearestPt = trackPoints[nearestIdx];
+    const offCourseDistanceMi = haversineDistance(lat, lon, nearestPt[0], nearestPt[1]);
 
     waypoints.push({
       id: `wpt-${i}`,
@@ -289,6 +293,7 @@ export function parseGPX(xmlString) {
       type,
       reliability,
       distanceFromStartMi,
+      offCourseDistanceMi,
     });
   }
 
@@ -386,4 +391,242 @@ export function nextWaypointOfType(route, type, currentMile = 0) {
  */
 export function waypointsOfType(route, type) {
   return route.waypoints.filter((w) => w.type === type);
+}
+
+/**
+ * Interpolates coordinate position along the track points for a target mileage.
+ * @param {Array<[number, number]>} trackPoints
+ * @param {number} targetMile
+ * @returns {[number, number] | null}
+ */
+export function getCoordinatesAtMile(trackPoints, targetMile) {
+  if (!trackPoints || trackPoints.length === 0) return null;
+  if (targetMile <= 0) return trackPoints[0];
+
+  let cumulative = 0;
+  for (let i = 1; i < trackPoints.length; i++) {
+    const p1 = trackPoints[i - 1];
+    const p2 = trackPoints[i];
+    const d = haversineDistance(p1[0], p1[1], p2[0], p2[1]);
+    if (cumulative + d >= targetMile) {
+      const ratio = (targetMile - cumulative) / d;
+      const lat = p1[0] + (p2[0] - p1[0]) * ratio;
+      const lon = p1[1] + (p2[1] - p1[1]) * ratio;
+      return [lat, lon];
+    }
+    cumulative += d;
+  }
+  return trackPoints[trackPoints.length - 1];
+}
+
+/**
+ * Extracts a segment of track points between two mile marks.
+ * @param {Array<[number, number]>} trackPoints
+ * @param {number} startMi
+ * @param {number} endMi
+ * @returns {Array<[number, number]>}
+ */
+export function getTrackSegmentForMiles(trackPoints, startMi, endMi) {
+  if (!trackPoints || trackPoints.length === 0) return [];
+
+  const distances = [0];
+  let acc = 0;
+  for (let i = 1; i < trackPoints.length; i++) {
+    acc += haversineDistance(
+      trackPoints[i - 1][0],
+      trackPoints[i - 1][1],
+      trackPoints[i][0],
+      trackPoints[i][1],
+    );
+    distances.push(acc);
+  }
+
+  let startIdx = 0;
+  let endIdx = trackPoints.length - 1;
+  let minStartDelta = Number.POSITIVE_INFINITY;
+  let minEndDelta = Number.POSITIVE_INFINITY;
+
+  for (let i = 0; i < distances.length; i++) {
+    const dStart = Math.abs(distances[i] - startMi);
+    if (dStart < minStartDelta) {
+      minStartDelta = dStart;
+      startIdx = i;
+    }
+    const dEnd = Math.abs(distances[i] - endMi);
+    if (dEnd < minEndDelta) {
+      minEndDelta = dEnd;
+      endIdx = i;
+    }
+  }
+
+  return trackPoints.slice(startIdx, endIdx + 1);
+}
+
+/**
+ * Classifies an OSM tag dictionary into a resource type.
+ * @param {object} tags
+ * @returns {'water' | 'camping' | 'resupply' | 'navigation'}
+ */
+export function classifyOSMElement(tags) {
+  if (
+    tags.tourism === 'camp_site' ||
+    tags.tourism === 'caravan_site' ||
+    tags.camp_site ||
+    tags.backcountry === 'yes'
+  ) {
+    return 'camping';
+  }
+
+  const waterKeywords = [
+    'water',
+    'spring',
+    'well',
+    'drinking_water',
+    'spigot',
+    'river',
+    'stream',
+    'creek',
+    'lake',
+    'pond',
+    'basin',
+    'reservoir',
+    'water_point',
+  ];
+  const hasWaterTag =
+    tags.amenity === 'drinking_water' ||
+    tags.natural === 'water' ||
+    tags.natural === 'spring' ||
+    tags.waterway === 'river' ||
+    tags.waterway === 'stream' ||
+    tags.waterway === 'creek' ||
+    tags.man_made === 'water_well' ||
+    tags.man_made === 'water_tap' ||
+    tags.man_made === 'spigot';
+  if (hasWaterTag) return 'water';
+
+  const nameDesc = `${tags.name || ''} ${tags.description || ''} ${tags.amenity || ''} ${
+    tags.natural || ''
+  } ${tags.waterway || ''}`.toLowerCase();
+  if (waterKeywords.some((k) => nameDesc.includes(k))) return 'water';
+
+  const resupplyTags =
+    tags.shop === 'supermarket' ||
+    tags.shop === 'convenience' ||
+    tags.shop === 'grocery' ||
+    tags.amenity === 'cafe' ||
+    tags.amenity === 'restaurant' ||
+    tags.amenity === 'fuel' ||
+    tags.amenity === 'fast_food' ||
+    tags.amenity === 'pub' ||
+    tags.tourism === 'hotel' ||
+    tags.tourism === 'motel' ||
+    tags.tourism === 'hostel';
+  if (resupplyTags) return 'resupply';
+
+  const resupplyKeywords = [
+    'store',
+    'market',
+    'food',
+    'grocery',
+    'restaurant',
+    'cafe',
+    'diner',
+    'gas',
+    'station',
+    'resupply',
+    'hotel',
+    'motel',
+  ];
+  if (resupplyKeywords.some((k) => nameDesc.includes(k))) return 'resupply';
+
+  const campKeywords = ['camp', 'campground', 'campsite', 'bivvy', 'bivy'];
+  if (campKeywords.some((k) => nameDesc.includes(k))) return 'camping';
+
+  return 'navigation';
+}
+
+/**
+ * Returns a human-friendly name for an OSM element.
+ * @param {object} tags
+ * @param {'water' | 'camping' | 'resupply' | 'navigation'} type
+ * @returns {string}
+ */
+export function osmElementLabel(tags, type) {
+  if (tags.name) return tags.name;
+  if (type === 'water') {
+    if (tags.natural === 'spring') return 'Spring';
+    if (tags.amenity === 'drinking_water') return 'Drinking Water';
+    if (tags.waterway) return tags.waterway.charAt(0).toUpperCase() + tags.waterway.slice(1);
+    return 'Water Source';
+  }
+  if (type === 'camping') {
+    return 'Camp Site';
+  }
+  if (type === 'resupply') {
+    if (tags.shop) return tags.shop.charAt(0).toUpperCase() + tags.shop.slice(1);
+    if (tags.amenity === 'cafe') return 'Café';
+    if (tags.amenity === 'fuel') return 'Gas Station';
+    return 'Resupply Stop';
+  }
+  return 'Waymark';
+}
+
+/**
+ * Assigns a default reliability score for an OSM element.
+ * @param {object} tags
+ * @param {'water' | 'camping' | 'resupply' | 'navigation'} type
+ * @returns {number}
+ */
+export function osmElementReliability(tags, type) {
+  if (type !== 'water') return 0;
+  if (tags.amenity === 'drinking_water') return 90;
+  if (tags.natural === 'spring') return 65;
+  if (tags.natural === 'water' || tags.waterway === 'river') return 80;
+  return 50;
+}
+
+/**
+ * Safely fetches from Overpass API, falling back to mirrors and retrying on 429 rate limits.
+ * @param {string} query - Overpass QL query string
+ * @returns {Promise<any>} Parsed JSON response
+ */
+export async function fetchOverpass(query) {
+  const OVERPASS_MIRRORS = [
+    'https://overpass-api.de/api/interpreter',
+    'https://lz4.overpass-api.de/api/interpreter',
+    'https://z.overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+  ];
+
+  let lastError = null;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const url = OVERPASS_MIRRORS[attempt % OVERPASS_MIRRORS.length];
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `data=${encodeURIComponent(query)}`,
+        signal: AbortSignal.timeout(15_000),
+      });
+
+      if (res.status === 429) {
+        console.warn(`[BPNav] Overpass mirror ${url} rate-limited (429). Trying next...`);
+        await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+        continue;
+      }
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      return await res.json();
+    } catch (err) {
+      console.warn(`[BPNav] Overpass query failed on ${url}:`, err.message);
+      lastError = err;
+      await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+    }
+  }
+
+  throw new Error(`All Overpass mirrors failed. Last error: ${lastError?.message}`);
 }

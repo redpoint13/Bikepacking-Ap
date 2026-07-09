@@ -1,0 +1,527 @@
+{
+  "name": "Colorado Trail (SOBO)",
+  "source": "CTR Resources1.0 master log",
+  "schema": [
+    "cumulativeMi",
+    "landmark",
+    "type",
+    "elevationFt",
+    "milesToNextWater",
+    "milesToNextFood"
+  ],
+  "totalMiles": 529.4,
+  "entries": [
+    {
+      "cumulativeMi": 0.0,
+      "landmark": "Start",
+      "type": "GENERIC",
+      "elevationFt": 5498,
+      "milesToNextWater": 15.7,
+      "milesToNextFood": 22.8
+    },
+    {
+      "cumulativeMi": 15.7,
+      "landmark": "South Platte River",
+      "type": "WATER",
+      "elevationFt": 6103,
+      "milesToNextWater": 7.1,
+      "milesToNextFood": 7.1
+    },
+    {
+      "cumulativeMi": 22.8,
+      "landmark": "Buffalo Creek",
+      "type": "FOOD",
+      "elevationFt": 7613,
+      "milesToNextWater": 2.5,
+      "milesToNextFood": 16.2
+    },
+    {
+      "cumulativeMi": 25.3,
+      "landmark": "Water",
+      "type": "WATER",
+      "elevationFt": 7644,
+      "milesToNextWater": 13.7,
+      "milesToNextFood": 13.7
+    },
+    {
+      "cumulativeMi": 39.0,
+      "landmark": "Bailey",
+      "type": "FOOD",
+      "elevationFt": 8274,
+      "milesToNextWater": 2.9,
+      "milesToNextFood": 2.9
+    },
+    {
+      "cumulativeMi": 41.9,
+      "landmark": "Wellington Lake Campground",
+      "type": "FOOD",
+      "elevationFt": 8028,
+      "milesToNextWater": 57.3,
+      "milesToNextFood": 57.3
+    },
+    {
+      "cumulativeMi": 99.2,
+      "landmark": "Stage Stop Saloon and Store",
+      "type": "FOOD",
+      "elevationFt": 9097,
+      "milesToNextWater": 16.9,
+      "milesToNextFood": 16.9
+    },
+    {
+      "cumulativeMi": 114.4,
+      "landmark": "Kenosha Pass - Hwy. 285",
+      "type": "SUMMIT",
+      "elevationFt": 9983,
+      "milesToNextWater": 1.7,
+      "milesToNextFood": 1.7
+    },
+    {
+      "cumulativeMi": 116.1,
+      "landmark": "Jefferson",
+      "type": "FOOD",
+      "elevationFt": 10295,
+      "milesToNextWater": 4.5,
+      "milesToNextFood": 5.5
+    },
+    {
+      "cumulativeMi": 120.6,
+      "landmark": "Jefferson Creek",
+      "type": "WATER",
+      "elevationFt": 9993,
+      "milesToNextWater": 1.0,
+      "milesToNextFood": 1.0
+    },
+    {
+      "cumulativeMi": 121.6,
+      "landmark": "Fairplay",
+      "type": "FOOD",
+      "elevationFt": 10390,
+      "milesToNextWater": 9.3,
+      "milesToNextFood": 26.1
+    },
+    {
+      "cumulativeMi": 126.1,
+      "landmark": "Georgia Pass",
+      "type": "SUMMIT",
+      "elevationFt": 11876,
+      "milesToNextWater": 4.8,
+      "milesToNextFood": 21.6
+    },
+    {
+      "cumulativeMi": 130.9,
+      "landmark": "Middle Fork Swan River",
+      "type": "WATER",
+      "elevationFt": 10177,
+      "milesToNextWater": 2.2,
+      "milesToNextFood": 16.8
+    },
+    {
+      "cumulativeMi": 133.1,
+      "landmark": "North Fork Swan River",
+      "type": "WATER",
+      "elevationFt": 9914,
+      "milesToNextWater": 14.6,
+      "milesToNextFood": 14.6
+    },
+    {
+      "cumulativeMi": 136.3,
+      "landmark": "High Point",
+      "type": "SUMMIT",
+      "elevationFt": 11174,
+      "milesToNextWater": 11.4,
+      "milesToNextFood": 11.4
+    },
+    {
+      "cumulativeMi": 147.7,
+      "landmark": "7-11",
+      "type": "STORE",
+      "elevationFt": 9947,
+      "milesToNextWater": 0.1,
+      "milesToNextFood": 0.1
+    },
+    {
+      "cumulativeMi": 147.8,
+      "landmark": "Breckenridge (Bike Shops)",
+      "type": "FOOD",
+      "elevationFt": 10019,
+      "milesToNextWater": 1.3,
+      "milesToNextFood": 1.3
+    },
+    {
+      "cumulativeMi": 149.1,
+      "landmark": "Frisco (Bike Shops)",
+      "type": "FOOD",
+      "elevationFt": 10042,
+      "milesToNextWater": 10.6,
+      "milesToNextFood": 10.6
+    },
+    {
+      "cumulativeMi": 154.8,
+      "landmark": "10 Mile Ridge",
+      "type": "SUMMIT",
+      "elevationFt": 12496,
+      "milesToNextWater": 4.9,
+      "milesToNextFood": 4.9
+    },
+    {
+      "cumulativeMi": 159.7,
+      "landmark": "Conoco Station",
+      "type": "STORE",
+      "elevationFt": 9706,
+      "milesToNextWater": 1.1,
+      "milesToNextFood": 1.1
+    },
+    {
+      "cumulativeMi": 160.8,
+      "landmark": "Copper Mountain",
+      "type": "FOOD",
+      "elevationFt": 9852,
+      "milesToNextWater": 13.8,
+      "milesToNextFood": 34.7
+    },
+    {
+      "cumulativeMi": 168.1,
+      "landmark": "Searle Pass",
+      "type": "SUMMIT",
+      "elevationFt": 12037,
+      "milesToNextWater": 6.5,
+      "milesToNextFood": 27.4
+    },
+    {
+      "cumulativeMi": 171.2,
+      "landmark": "Kokomo Pass",
+      "type": "SUMMIT",
+      "elevationFt": 12024,
+      "milesToNextWater": 3.4,
+      "milesToNextFood": 24.3
+    },
+    {
+      "cumulativeMi": 174.6,
+      "landmark": "Cataract Creek",
+      "type": "WATER",
+      "elevationFt": 10124,
+      "milesToNextWater": 2.7,
+      "milesToNextFood": 20.9
+    },
+    {
+      "cumulativeMi": 177.3,
+      "landmark": "East Fork Eagle River",
+      "type": "WATER",
+      "elevationFt": 9324,
+      "milesToNextWater": 18.2,
+      "milesToNextFood": 18.2
+    },
+    {
+      "cumulativeMi": 195.5,
+      "landmark": "Leadville (Bike Shop)",
+      "type": "FOOD",
+      "elevationFt": 10157,
+      "milesToNextWater": 18.1,
+      "milesToNextFood": 18.1
+    },
+    {
+      "cumulativeMi": 213.6,
+      "landmark": "Twin Lakes",
+      "type": "FOOD",
+      "elevationFt": 9750,
+      "milesToNextWater": 17.9,
+      "milesToNextFood": 17.9
+    },
+    {
+      "cumulativeMi": 231.5,
+      "landmark": "Arkansas Valley Adventures",
+      "type": "FOOD",
+      "elevationFt": 8786,
+      "milesToNextWater": 13.9,
+      "milesToNextFood": 13.9
+    },
+    {
+      "cumulativeMi": 245.4,
+      "landmark": "Buena Vista (Bike Shop)",
+      "type": "FOOD",
+      "elevationFt": 7956,
+      "milesToNextWater": 21.8,
+      "milesToNextFood": 21.8
+    },
+    {
+      "cumulativeMi": 261.1,
+      "landmark": "Top of Climb",
+      "type": "SUMMIT",
+      "elevationFt": 10029,
+      "milesToNextWater": 6.1,
+      "milesToNextFood": 6.1
+    },
+    {
+      "cumulativeMi": 267.2,
+      "landmark": "Princeton Hot Springs",
+      "type": "FOOD",
+      "elevationFt": 8202,
+      "milesToNextWater": 2.5,
+      "milesToNextFood": 12.1
+    },
+    {
+      "cumulativeMi": 269.7,
+      "landmark": "Chalk Creek",
+      "type": "WATER",
+      "elevationFt": 8375,
+      "milesToNextWater": 9.6,
+      "milesToNextFood": 9.6
+    },
+    {
+      "cumulativeMi": 279.3,
+      "landmark": "Salida (Bike Shop)",
+      "type": "FOOD",
+      "elevationFt": 9635,
+      "milesToNextWater": 1.9,
+      "milesToNextFood": 1.9
+    },
+    {
+      "cumulativeMi": 281.2,
+      "landmark": "Poncha Springs",
+      "type": "FOOD",
+      "elevationFt": 9891,
+      "milesToNextWater": 3.1,
+      "milesToNextFood": 7.6
+    },
+    {
+      "cumulativeMi": 284.3,
+      "landmark": "Northern Fork South Arkansas River",
+      "type": "WATER",
+      "elevationFt": 9143,
+      "milesToNextWater": 4.5,
+      "milesToNextFood": 4.5
+    },
+    {
+      "cumulativeMi": 288.8,
+      "landmark": "Monarch Spur RV Park",
+      "type": "FOOD",
+      "elevationFt": 9304,
+      "milesToNextWater": 3.6,
+      "milesToNextFood": 20.1
+    },
+    {
+      "cumulativeMi": 292.4,
+      "landmark": "Fooses Creek",
+      "type": "WATER",
+      "elevationFt": 9576,
+      "milesToNextWater": 12.5,
+      "milesToNextFood": 16.5
+    },
+    {
+      "cumulativeMi": 304.9,
+      "landmark": "Poncha Creek",
+      "type": "WATER",
+      "elevationFt": 10836,
+      "milesToNextWater": 4.0,
+      "milesToNextFood": 4.0
+    },
+    {
+      "cumulativeMi": 305.2,
+      "landmark": "Marshall Pass",
+      "type": "SUMMIT",
+      "elevationFt": 10866,
+      "milesToNextWater": 3.7,
+      "milesToNextFood": 3.7
+    },
+    {
+      "cumulativeMi": 308.9,
+      "landmark": "Saguache",
+      "type": "FOOD",
+      "elevationFt": 11345,
+      "milesToNextWater": 7.5,
+      "milesToNextFood": 57.2
+    },
+    {
+      "cumulativeMi": 316.4,
+      "landmark": "Tank Seven Creek",
+      "type": "WATER",
+      "elevationFt": 10354,
+      "milesToNextWater": 21.6,
+      "milesToNextFood": 49.7
+    },
+    {
+      "cumulativeMi": 320.0,
+      "landmark": "Sargents Mesa",
+      "type": "SUMMIT",
+      "elevationFt": 11640,
+      "milesToNextWater": 18.0,
+      "milesToNextFood": 46.1
+    },
+    {
+      "cumulativeMi": 338.0,
+      "landmark": "Lujan Creek",
+      "type": "WATER",
+      "elevationFt": 10154,
+      "milesToNextWater": 2.1,
+      "milesToNextFood": 28.1
+    },
+    {
+      "cumulativeMi": 340.1,
+      "landmark": "Lujan Creek",
+      "type": "WATER",
+      "elevationFt": 9553,
+      "milesToNextWater": 26.0,
+      "milesToNextFood": 26.0
+    },
+    {
+      "cumulativeMi": 366.1,
+      "landmark": "Gunnison (Bike Shop)",
+      "type": "FOOD",
+      "elevationFt": 9143,
+      "milesToNextWater": 16.7,
+      "milesToNextFood": 16.7
+    },
+    {
+      "cumulativeMi": 378.7,
+      "landmark": "Los Pinos Pass",
+      "type": "SUMMIT",
+      "elevationFt": 10492,
+      "milesToNextWater": 4.1,
+      "milesToNextFood": 4.1
+    },
+    {
+      "cumulativeMi": 382.8,
+      "landmark": "Cathedral Ranch Cabins (Bike Parts - limited)",
+      "type": "FOOD",
+      "elevationFt": 9235,
+      "milesToNextWater": 0.0,
+      "milesToNextFood": 0.0
+    },
+    {
+      "cumulativeMi": 382.8,
+      "landmark": "Creede",
+      "type": "FOOD",
+      "elevationFt": 9235,
+      "milesToNextWater": 3.6,
+      "milesToNextFood": 3.6
+    },
+    {
+      "cumulativeMi": 386.4,
+      "landmark": "Mineral Mountain Outfitters",
+      "type": "FOOD",
+      "elevationFt": 8986,
+      "milesToNextWater": 12.5,
+      "milesToNextFood": 12.5
+    },
+    {
+      "cumulativeMi": 398.9,
+      "landmark": "Lake City (Bike Shop)",
+      "type": "FOOD",
+      "elevationFt": 11223,
+      "milesToNextWater": 8.1,
+      "milesToNextFood": 51.7
+    },
+    {
+      "cumulativeMi": 407.0,
+      "landmark": "Creek",
+      "type": "WATER",
+      "elevationFt": 10912,
+      "milesToNextWater": 43.6,
+      "milesToNextFood": 43.6
+    },
+    {
+      "cumulativeMi": 422.1,
+      "landmark": "Coney Summit - Highest Point",
+      "type": "SUMMIT",
+      "elevationFt": 13221,
+      "milesToNextWater": 28.5,
+      "milesToNextFood": 28.5
+    },
+    {
+      "cumulativeMi": 439.8,
+      "landmark": "Stony Pass",
+      "type": "SUMMIT",
+      "elevationFt": 12598,
+      "milesToNextWater": 10.8,
+      "milesToNextFood": 10.8
+    },
+    {
+      "cumulativeMi": 450.6,
+      "landmark": "Silverton (Bike Shop)",
+      "type": "FOOD",
+      "elevationFt": 9281,
+      "milesToNextWater": 5.4,
+      "milesToNextFood": 5.4
+    },
+    {
+      "cumulativeMi": 456.0,
+      "landmark": "Molas Lake Campground",
+      "type": "FOOD",
+      "elevationFt": 10521,
+      "milesToNextWater": 16.0,
+      "milesToNextFood": 73.4
+    },
+    {
+      "cumulativeMi": 468.8,
+      "landmark": "Rolling Pass",
+      "type": "SUMMIT",
+      "elevationFt": 12490,
+      "milesToNextWater": 3.2,
+      "milesToNextFood": 60.6
+    },
+    {
+      "cumulativeMi": 472.0,
+      "landmark": "Cascade Creek",
+      "type": "WATER",
+      "elevationFt": 10866,
+      "milesToNextWater": 13.3,
+      "milesToNextFood": 57.4
+    },
+    {
+      "cumulativeMi": 484.6,
+      "landmark": "Blackhawk Pass",
+      "type": "SUMMIT",
+      "elevationFt": 11988,
+      "milesToNextWater": 0.7,
+      "milesToNextFood": 44.8
+    },
+    {
+      "cumulativeMi": 485.3,
+      "landmark": "Straight Creek",
+      "type": "WATER",
+      "elevationFt": 11469,
+      "milesToNextWater": 30.2,
+      "milesToNextFood": 44.1
+    },
+    {
+      "cumulativeMi": 506.5,
+      "landmark": "Indian Ridge",
+      "type": "SUMMIT",
+      "elevationFt": 12198,
+      "milesToNextWater": 9.0,
+      "milesToNextFood": 22.9
+    },
+    {
+      "cumulativeMi": 509.4,
+      "landmark": "Kennebec Pass",
+      "type": "SUMMIT",
+      "elevationFt": 11758,
+      "milesToNextWater": 6.1,
+      "milesToNextFood": 20.0
+    },
+    {
+      "cumulativeMi": 515.5,
+      "landmark": "Junction Creek",
+      "type": "WATER",
+      "elevationFt": 8540,
+      "milesToNextWater": 11.4,
+      "milesToNextFood": 13.9
+    },
+    {
+      "cumulativeMi": 526.9,
+      "landmark": "Junction Creek",
+      "type": "WATER",
+      "elevationFt": 7404,
+      "milesToNextWater": 2.5,
+      "milesToNextFood": 2.5
+    },
+    {
+      "cumulativeMi": 529.4,
+      "landmark": "Junction Creek Trailhead",
+      "type": "GENERIC",
+      "elevationFt": 6991,
+      "milesToNextWater": null,
+      "milesToNextFood": null
+    }
+  ]
+}

@@ -2,9 +2,7 @@
  * camp.js — Camp site enrichment for Bikepacker Navigator.
  */
 
-import { distanceFromStart, haversineDistance } from './gpx.js';
-
-const OSM_OVERPASS = 'https://overpass-api.de/api/interpreter';
+import { distanceFromStart, fetchOverpass, haversineDistance } from './gpx.js';
 const ROUTE_PROXIMITY_MI = 2.0;
 const DEDUP_THRESHOLD_MI = 0.1;
 const SAMPLE_STEP = 20;
@@ -79,14 +77,7 @@ export async function fetchOSMCampSites(bounds) {
   ].join('');
 
   try {
-    const res = await fetch(OSM_OVERPASS, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `data=${encodeURIComponent(query)}`,
-      signal: AbortSignal.timeout(20_000),
-    });
-    if (!res.ok) throw new Error(`OSM camp HTTP ${res.status}`);
-    const data = await res.json();
+    const data = await fetchOverpass(query);
     return data.elements ?? [];
   } catch (err) {
     console.warn('[BPNav] OSM camp fetch failed:', err.message);

@@ -11,14 +11,13 @@
  * @module water
  */
 
-import { distanceFromStart, haversineDistance } from './gpx.js';
+import { distanceFromStart, fetchOverpass, haversineDistance } from './gpx.js';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 const USGS_BASE = 'https://api.waterdata.usgs.gov/ogcapi/v0/collections/monitoring-locations/items';
-const OSM_OVERPASS = 'https://overpass-api.de/api/interpreter';
 
 /** Sources within this many miles of the route are included. */
 const ROUTE_PROXIMITY_MI = 1.0;
@@ -163,14 +162,7 @@ export async function fetchOSMWater(bounds) {
   ].join('');
 
   try {
-    const res = await fetch(OSM_OVERPASS, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `data=${encodeURIComponent(query)}`,
-      signal: AbortSignal.timeout(20_000),
-    });
-    if (!res.ok) throw new Error(`OSM HTTP ${res.status}`);
-    const data = await res.json();
+    const data = await fetchOverpass(query);
     return data.elements ?? [];
   } catch (err) {
     console.warn('[BPNav] OSM fetch failed:', err.message);
@@ -196,7 +188,22 @@ export async function fetchOSMWater(bounds) {
  * @param {object[]} osmElements   - Raw OSM elements
  * @returns {import('./gpx.js').Waypoint[]}
  */
-export function mergeWaterSources(route, usgsFeatures, osmElements) {
+/**
+ * Merges USGS and OSM water sources with existing GPX water waypoints.
+ *
+ * Rules:
+ * - External sources are filtered to within ROUTE_PROXIMITY_MI of the route.
+ * - Sources within DEDUP_THRESHOLD_MI of an existing waypoint are skipped
+ *   (GPX user-named waypoints take priority).
+ * - Result is sorted by distanceFromStartMi.
+ *
+ * @param {import('./gpx.js').RouteContext} route
+ * @param {object[]} usgsFeatures  - Raw USGS GeoJSON features
+ * @param {object[]} osmElements   - Raw OSM elements
+ * @param {Map<string, number>} [flowMap] - Real-time flow data (siteId -> cfs)
+ * @returns {import('./gpx.js').Waypoint[]}
+ */
+export function mergeWaterSources(route, usgsFeatures, osmElements, flowMap = new Map()) {
   const { trackPoints } = route;
   const sampled = sampleTrackPoints(trackPoints);
 
@@ -214,15 +221,30 @@ export function mergeWaterSources(route, usgsFeatures, osmElements) {
     }
 
     const props = feature.properties ?? {};
+    const siteId = props.monitoringLocationNumber;
+    let reliability = usgsReliability(feature);
+    let flowDesc = '';
+
+    if (siteId && flowMap.has(siteId)) {
+      const flow = flowMap.get(siteId);
+      if (flow > 0) {
+        reliability = 90; // Highly reliable since it is actively flowing
+        flowDesc = ` (Flowing: ${flow.toFixed(1)} cfs)`;
+      } else {
+        reliability = 0; // Dry
+        flowDesc = ' (Station reports DRY / no flow)';
+      }
+    }
+
     merged.push({
-      id: `usgs-${props.monitoringLocationNumber ?? feature.id}`,
+      id: `usgs-${siteId ?? feature.id}`,
       lat,
       lon,
       name: props.monitoringLocationName ?? 'USGS Station',
-      description: 'USGS monitoring station',
+      description: `USGS monitoring station${flowDesc}`,
       type: 'water',
       source: 'usgs',
-      reliability: usgsReliability(feature),
+      reliability,
       distanceFromStartMi: distanceFromStart(lat, lon, trackPoints),
     });
   }
@@ -252,16 +274,53 @@ export function mergeWaterSources(route, usgsFeatures, osmElements) {
   return merged.sort((a, b) => a.distanceFromStartMi - b.distanceFromStartMi);
 }
 
+/**
+ * Fetches real-time streamflow data (parameter 00060) for a list of USGS site IDs.
+ * Returns a Map of siteId -> flowRateCfs.
+ *
+ * @param {string[]} siteIds
+ * @returns {Promise<Map<string, number>>}
+ */
+export async function fetchUSGSFlowData(siteIds) {
+  const flowMap = new Map();
+  if (siteIds.length === 0) return flowMap;
+
+  const url = `https://waterservices.usgs.gov/nwis/iv/?format=json&sites=${siteIds.join(',')}&parameterCd=00060&siteStatus=active`;
+
+  try {
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) throw new Error(`USGS NWIS HTTP ${res.status}`);
+    const data = await res.json();
+
+    const timeSeries = data.value?.timeSeries ?? [];
+    for (const ts of timeSeries) {
+      const siteId = ts.sourceInfo?.siteCode?.[0]?.value;
+      const values = ts.values?.[0]?.value ?? [];
+      if (siteId && values.length > 0) {
+        const valStr = values[0].value;
+        const flow = Number.parseFloat(valStr);
+        if (Number.isFinite(flow)) {
+          flowMap.set(siteId, flow);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[BPNav] USGS NWIS streamflow fetch failed:', err.message);
+  }
+
+  return flowMap;
+}
+
 // ---------------------------------------------------------------------------
 // Top-level enrichment entry point
 // ---------------------------------------------------------------------------
 
 /**
- * Fetches USGS and OSM water data in parallel, merges with GPX waypoints,
- * and returns the enriched water waypoint list.
- *
- * Call this asynchronously after the route is already displayed so the user
- * sees instant feedback from GPX data while live data loads in the background.
+ * Fetches USGS and OSM water data in parallel, queries real-time streamflow
+ * for active USGS stations, merges them with GPX waypoints, and returns
+ * the enriched water waypoint list.
  *
  * @param {import('./gpx.js').RouteContext} route
  * @returns {Promise<import('./gpx.js').Waypoint[]>}
@@ -271,5 +330,12 @@ export async function enrichWaterSources(route) {
     fetchUSGSLocations(route.bounds),
     fetchOSMWater(route.bounds),
   ]);
-  return mergeWaterSources(route, usgsFeatures, osmElements);
+
+  const siteIds = usgsFeatures
+    .map((f) => f.properties?.monitoringLocationNumber)
+    .filter((id) => typeof id === 'string' && id.length > 0);
+
+  const flowMap = await fetchUSGSFlowData(siteIds);
+
+  return mergeWaterSources(route, usgsFeatures, osmElements, flowMap);
 }

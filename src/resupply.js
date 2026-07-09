@@ -8,13 +8,7 @@
  * @module resupply
  */
 
-import { distanceFromStart, haversineDistance } from './gpx.js';
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const OSM_OVERPASS = 'https://overpass-api.de/api/interpreter';
+import { distanceFromStart, fetchOverpass, haversineDistance } from './gpx.js';
 
 /** Resupply stops within this many miles of the route are included. */
 const ROUTE_PROXIMITY_MI = 1.5;
@@ -204,14 +198,7 @@ export async function fetchOSMResupply(bounds) {
   ].join('');
 
   try {
-    const res = await fetch(OSM_OVERPASS, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `data=${encodeURIComponent(query)}`,
-      signal: AbortSignal.timeout(20_000),
-    });
-    if (!res.ok) throw new Error(`OSM resupply HTTP ${res.status}`);
-    const data = await res.json();
+    const data = await fetchOverpass(query);
     return data.elements ?? [];
   } catch (err) {
     console.warn('[BPNav] OSM resupply fetch failed:', err.message);

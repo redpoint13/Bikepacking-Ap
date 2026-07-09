@@ -15,6 +15,14 @@ const maplibrePkg = require('maplibre-gl/package.json');
 const MAPLIBRE_CSS = path.resolve(maplibrePkgDir, maplibrePkg.style ?? 'dist/maplibre-gl.css');
 
 export default defineConfig({
+  server: {
+    port: 5173,
+    strictPort: true,
+  },
+  preview: {
+    port: 5173,
+    strictPort: true,
+  },
   resolve: {
     alias: {
       'maplibre-gl/dist/maplibre-gl.css': MAPLIBRE_CSS,

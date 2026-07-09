@@ -842,3 +842,567 @@ svg {
   outline: 2px solid var(--md-sys-color-primary);
   outline-offset: 2px;
 }
+
+/* Desktop Split-Screen Layout for large displays (GIS Dashboard style) */
+@media (min-width: 1024px) {
+  body {
+    height: 100vh !important;
+    overflow: hidden !important;
+  }
+
+  #app {
+    height: 100vh !important;
+    overflow: hidden !important;
+    max-width: none !important;
+  }
+
+  .dashboard {
+    display: grid !important;
+    grid-template-columns: 500px 1fr !important;
+    gap: var(--spacing-lg) !important;
+    height: calc(100vh - 64px) !important; /* height of viewport minus header (64px) */
+    padding: var(--spacing-md) var(--spacing-lg) !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+  }
+
+  /* Left column: scrollable sidebar */
+  .dashboard-sidebar {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: var(--spacing-lg) !important;
+    height: 100% !important;
+    overflow-y: auto !important;
+    padding-right: var(--spacing-xs) !important;
+  }
+
+  .dashboard-sidebar::-webkit-scrollbar {
+    width: 6px;
+  }
+  .dashboard-sidebar::-webkit-scrollbar-thumb {
+    background-color: var(--md-sys-color-outline-variant);
+    border-radius: 3px;
+  }
+
+  /* Right column: Sticky Map stretching to full height */
+  .map-section {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    height: 100% !important;
+    margin: 0 !important;
+  }
+
+  .map-container {
+    flex: 1 !important;
+    height: 100% !important;
+    max-height: none !important;
+    min-height: 400px !important;
+  }
+
+  /* Computer is planning mode only - hide the mode toggle */
+  #mode-toggle {
+    display: none !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Mobile layout and order overrides (when display: contents is active)
+   -------------------------------------------------------------------------- */
+.dashboard-sidebar {
+  display: contents;
+}
+
+/* Mobile ordering (for screen widths < 1024px) */
+@media (max-width: 1023px) {
+  .mode-toggle {
+    order: 1 !important;
+  }
+  .riding-controls {
+    order: 2 !important;
+  }
+  .map-section {
+    order: 3 !important;
+  }
+  .planning-view {
+    order: 4 !important;
+  }
+  .resource-section {
+    order: 5 !important;
+  }
+  .daylight-section {
+    order: 6 !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Mode Toggle Styling (Mobile-friendly)
+   -------------------------------------------------------------------------- */
+.mode-toggle {
+  display: flex;
+  background-color: var(--md-sys-color-surface-container);
+  border-radius: var(--md-sys-shape-corner-full);
+  padding: 4px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  margin-bottom: var(--spacing-xs);
+  min-height: 48px;
+}
+
+.mode-toggle__btn {
+  flex: 1;
+  border: none;
+  background: none;
+  color: var(--md-sys-color-on-surface-variant);
+  font-family: var(--md-sys-typescale-font);
+  font-size: var(--md-sys-typescale-body-size);
+  font-weight: 600;
+  border-radius: var(--md-sys-shape-corner-full);
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+  min-height: 40px;
+}
+
+.mode-toggle__btn--active {
+  background-color: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container);
+}
+
+.riding-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background-color: var(--md-sys-color-surface-container);
+  border-radius: var(--md-sys-shape-corner-medium);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  font-size: 13px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.riding-control-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.riding-control-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+/* --------------------------------------------------------------------------
+   Planning View & Controls Styling
+   -------------------------------------------------------------------------- */
+.plan-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.plan-summary {
+  background-color: var(--md-sys-color-surface-container);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-large);
+  padding: var(--spacing-md);
+  box-shadow: var(--md-sys-elevation-1);
+}
+
+.plan-stat {
+  font-size: var(--md-sys-typescale-body-size);
+  color: var(--md-sys-color-on-surface-variant);
+  background-color: var(--md-sys-color-surface-container-high);
+  padding: 4px 10px;
+  border-radius: var(--md-sys-shape-corner-small);
+  display: inline-block;
+  font-variant-numeric: tabular-nums;
+  margin-right: var(--spacing-xs);
+  margin-bottom: var(--spacing-xs);
+}
+
+.plan-stat strong {
+  color: var(--md-sys-color-primary);
+  font-size: 1.05rem;
+}
+
+/* parameter inputs container */
+.plan-controls {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--spacing-sm);
+  background-color: var(--md-sys-color-surface-container-low);
+  padding: var(--spacing-md);
+  border-radius: var(--md-sys-shape-corner-large);
+  border: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.plan-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.plan-field__label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.plan-field__inputwrap {
+  display: flex;
+  align-items: center;
+  background-color: var(--md-sys-color-surface-container-high);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-small);
+  padding: 0 var(--spacing-sm);
+  height: 40px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.plan-field__inputwrap:focus-within {
+  border-color: var(--md-sys-color-primary);
+  box-shadow: 0 0 0 2px rgba(120, 220, 149, 0.2);
+}
+
+.plan-input {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--md-sys-color-on-surface);
+  font-family: var(--md-sys-typescale-font);
+  font-size: var(--md-sys-typescale-body-size);
+  font-weight: 600;
+  outline: none;
+  width: 100%;
+  text-align: right;
+  padding-right: 4px;
+}
+
+/* remove spinners for input number */
+.plan-input::-webkit-outer-spin-button,
+.plan-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.plan-input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+.plan-field__unit {
+  font-size: 12px;
+  color: var(--md-sys-color-outline);
+  font-weight: 600;
+  margin-left: 2px;
+  white-space: nowrap;
+}
+
+.plan-checkbox {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--md-sys-color-primary);
+  cursor: pointer;
+}
+
+/* --------------------------------------------------------------------------
+   Water and Food Carry Lists
+   -------------------------------------------------------------------------- */
+.plan-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.plan-row {
+  background-color: var(--md-sys-color-surface-container);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-medium);
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  box-shadow: var(--md-sys-elevation-1);
+}
+
+.plan-row__main {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  color: var(--md-sys-color-on-surface);
+}
+
+.plan-row__span {
+  font-size: 13px;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.plan-row__miles {
+  color: var(--md-sys-color-primary);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.plan-row__sub {
+  font-size: 12px;
+  color: var(--md-sys-color-on-surface-variant);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.plan-flag {
+  background-color: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-on-error-container);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--md-sys-color-error);
+}
+
+.plan-row--alert {
+  border-color: var(--md-sys-color-error);
+}
+
+.plan-row--alert .plan-row__miles {
+  color: var(--md-sys-color-error);
+}
+
+.plan-empty {
+  font-size: var(--md-sys-typescale-body-size);
+  color: var(--md-sys-color-on-surface-variant);
+  opacity: 0.65;
+  text-align: center;
+  padding: var(--spacing-lg) 0;
+}
+
+/* --------------------------------------------------------------------------
+   Day Itinerary / Day Cards
+   -------------------------------------------------------------------------- */
+.day-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.day-card {
+  background-color: var(--md-sys-color-surface-container);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-large);
+  overflow: hidden;
+  box-shadow: var(--md-sys-elevation-1);
+}
+
+.day-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: var(--md-sys-color-surface-container-high);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.day-card__num {
+  font-weight: 700;
+  color: var(--md-sys-color-primary);
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.day-card__range {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--md-sys-color-on-surface-variant);
+  font-variant-numeric: tabular-nums;
+}
+
+.day-card__options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+}
+
+.day-option {
+  background-color: var(--md-sys-color-surface-container-low);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-medium);
+  padding: var(--spacing-sm) var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  transition: all 0.2s ease;
+}
+
+.day-option:hover {
+  background-color: var(--md-sys-color-surface-container);
+  border-color: var(--md-sys-color-outline);
+}
+
+.day-option--chosen {
+  background-color: var(--md-sys-color-primary-container);
+  border-color: var(--md-sys-color-primary);
+  box-shadow: 0 0 0 1px var(--md-sys-color-primary);
+}
+
+.day-option__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.day-option__kind {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--md-sys-color-outline);
+}
+
+.day-option--chosen .day-option__kind {
+  color: var(--md-sys-color-on-primary-container);
+}
+
+.day-option__miles {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--md-sys-color-on-surface);
+  font-variant-numeric: tabular-nums;
+}
+
+.day-option__camp {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--md-sys-color-on-surface);
+  line-height: 1.3;
+}
+
+.day-option__meta {
+  font-size: 11px;
+  color: var(--md-sys-color-on-surface-variant);
+  line-height: 1.4;
+}
+
+.day-option--chosen .day-option__meta {
+  color: var(--md-sys-color-on-primary-container);
+  opacity: 0.85;
+}
+
+/* --------------------------------------------------------------------------
+   Resource Log Table
+   -------------------------------------------------------------------------- */
+.log-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border-radius: var(--md-sys-shape-corner-medium);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  background-color: var(--md-sys-color-surface-container);
+}
+
+.log-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 12px;
+  font-family: var(--md-sys-typescale-font);
+}
+
+.log-table th,
+.log-table td {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.log-table th {
+  background-color: var(--md-sys-color-surface-container-high);
+  font-weight: 600;
+  color: var(--md-sys-color-on-surface-variant);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.log-table tr:last-child td {
+  border-bottom: none;
+}
+
+.log-table tr:hover td {
+  background-color: var(--md-sys-color-surface-container-high);
+}
+
+.log-mi {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--md-sys-color-primary);
+  width: 60px;
+}
+
+.log-name {
+  font-weight: 500;
+  color: var(--md-sys-color-on-surface);
+  word-break: break-word;
+}
+
+.log-num {
+  font-variant-numeric: tabular-nums;
+  color: var(--md-sys-color-on-surface-variant);
+  width: 75px;
+  text-align: right;
+}
+
+/* Badges inside log table */
+.log-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.log-badge--water {
+  background-color: rgba(120, 220, 149, 0.15);
+  color: var(--md-sys-color-primary);
+  border: 1px solid rgba(120, 220, 149, 0.3);
+}
+
+.log-badge--resupply {
+  background-color: rgba(181, 204, 187, 0.15);
+  color: #b5ccbb;
+  border: 1px solid rgba(181, 204, 187, 0.3);
+}
+
+.log-badge--camping {
+  background-color: rgba(244, 180, 0, 0.15);
+  color: var(--md-sys-color-tertiary);
+  border: 1px solid rgba(244, 180, 0, 0.3);
+}
+
+.log-badge--summit {
+  background-color: rgba(144, 142, 149, 0.15);
+  color: #c7c5ca;
+  border: 1px solid rgba(144, 142, 149, 0.3);
+}
+
+.log-badge--generic {
+  background-color: transparent;
+  color: var(--md-sys-color-outline);
+  border: none;
+}
