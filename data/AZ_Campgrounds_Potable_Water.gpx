@@ -1,0 +1,132 @@
+<?xml version="1.0" ?>
+<gpx xmlns="http://www.topografix.com/GPX/1/1" version="1.1" creator="Campground Coordinates Extractor">
+  <!-- Coconino National Forest -->
+  <wpt lat="34.9610" lon="-111.4082">
+    <name>Ashurst Lake Campground</name>
+    <desc>Potable Water</desc>
+    <sym>Water</sym>
+    <type>Water</type>
+  </wpt>
+  <wpt lat="34.9372" lon="-111.6033">
+    <name>Canyon Vista Campground</name>
+    <desc>Potable Water</desc>
+    <sym>Water</sym>
+    <type>Water</type>
+  </wpt>
+  <wpt lat="34.9947" lon="-111.7410">
+    <name>Cave Springs Campground</name>
+    <desc>Potable Water</desc>
+    <sym>Water</sym>
+    <type>Water</type>
+  </wpt>
+  <wpt lat="34.9355" lon="-111.4552">
+    <name>Dairy Springs Campground</name>
+    <desc>Potable Water</desc>
+    <sym>Water</sym>
+    <type>Water</type>
+  </wpt>
+  <wpt lat="34.9421" lon="-111.4931">
+    <name>Double Springs Campground</name>
+    <desc>Potable Water</desc>
+    <sym>Water</sym>
+    <type>Water</type>
+  </wpt>
+  <wpt lat="34.4286" lon="-111.1893">
+    <name>Knoll Lake Campground</name>
+    <desc>Potable Water</desc>
+    <sym>Water</sym>
+    <type>Water</type>
+  </wpt>
+  <wpt lat="34.9298" lon="-111.7441">
+    <name>Manzanita Campground</name>
+    <desc>Potable Water</desc>
+    <sym>Water</sym>
+    <type>Water</type>
+  </wpt>
+  <wpt lat="34.5683" lon="-111.1968">
+    <name>Rock Crossing Campground</name>
+    <desc>Potable Water</desc>
+    <sym>Water</sym>
+    <type>Water</type>
+  </wpt>
+  <wpt lat="35.3622" lon="-111.5367">
+    <name>Bonito Campground</name>
+    <desc>Potable Water</desc>
+    <sym>Water</sym>
+    <type>Water</type>
+  </wpt>
+  <wpt lat="34.5152" lon="-111.7371">
+    <name>Clear Creek Campground</name>
+    <desc>Potable Water</desc>
+    <sym>Water</sym>
+    <type>Water</type>
+  </wpt>
+  <wpt lat="34.9338" lon="-111.4447">
+    <name>Pine Grove Campground</name>
+    <desc>Potable Water</desc>
+    <sym>Water</sym>
+    <type>Water</type>
+  </wpt>
+  <!-- Tonto National Forest -->
+  <wpt lat="33.6335" lon="-111.1610">
+    <name>Burnt Corral Campground</name>
+    <desc>Potable Water</desc>
+    <sym>Water</sym>
+    <type>Water</type>
+  </wpt>
+  <wpt lat="33.6766" lon="-111.1215">
+    <name>Cholla Campground</name>
+    <desc>Potable Water</desc>
+    <sym>Water</sym>
+    <type>Water</type>
+  </wpt>
+  <wpt lat="33.6558" lon="-111.0858">
+    <name>Frazier Horse Camp</name>
+    <desc>Potable Water</desc>
+    <sym>Water</sym>
+    <type>Water</type>
+  </wpt>
+  <wpt lat="34.3056" lon="-111.0250">
+    <name>Sharp Creek Campground</name>
+    <desc>Potable Water</desc>
+    <sym>Water</sym>
+    <type>Water</type>
+  </wpt>
+  <wpt lat="33.5283" lon="-111.3855">
+    <name>Tortilla Campground</name>
+    <desc>Potable Water</desc>
+    <sym>Water</sym>
+    <type>Water</type>
+  </wpt>
+  <wpt lat="34.3323" lon="-111.1008">
+    <name>Upper Tonto Creek Campground</name>
+    <desc>Potable Water</desc>
+    <sym>Water</sym>
+    <type>Water</type>
+  </wpt>
+  <wpt lat="33.6744" lon="-111.0504">
+    <name>Windy Hill Campground</name>
+    <desc>Potable Water</desc>
+    <sym>Water</sym>
+    <type>Water</type>
+  </wpt>
+  <wpt lat="34.3164" lon="-111.0427">
+    <name>Christopher Creek Campground</name>
+    <desc>Potable Water</desc>
+    <sym>Water</sym>
+    <type>Water</type>
+  </wpt>
+  <wpt lat="34.2818" lon="-111.1211">
+    <name>Ponderosa Campground</name>
+    <desc>Potable Water</desc>
+    <sym>Water</sym>
+    <type>Water</type>
+  </wpt>
+  <trk>
+    <name>Spanning Dummy Track</name>
+    <trkseg>
+      <trkpt lat="34.8697" lon="-111.7610"/>
+      <trkpt lat="34.8698" lon="-111.7611"/>
+    </trkseg>
+  </trk>
+</gpx>

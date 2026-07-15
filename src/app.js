@@ -47,6 +47,7 @@ import {
 } from './storage.js';
 import { calculateDaylightBuffer } from './sun.js';
 import { enrichWaterSources } from './water.js';
+import { RadarController } from './radar.js';
 
 // ---------------------------------------------------------------------------
 // Module state
@@ -57,6 +58,21 @@ let currentRoute = null;
 
 /** @type {import('maplibre-gl').Map | null} */
 let currentMap = null;
+
+/** @type {RadarController | null} */
+let radarController = null;
+
+/** @type {number | null} */
+let sunsprintTargetMile = null;
+
+/** @type {string} */
+let lastSunsprintStatus = 'ok';
+
+/** @type {number} */
+let lastCurrentMile = 0;
+
+/** @type {number} */
+let lastPaceMph = 15;
 
 /** @type {Array<object>} Current active search results. */
 let lastSearchResults = [];
@@ -620,6 +636,14 @@ export function renderApp(container) {
             <span class="daylight-bar__label" hidden aria-hidden="true">Sunrise</span>
             <span class="daylight-bar__label" hidden aria-hidden="true">Sunset</span>
 
+            <!-- Target selector UI -->
+            <div class="sunsprint-target-wrapper" id="sunsprint-target-wrapper" hidden>
+              <label for="sunsprint-target-slider" class="sunsprint-target-label">
+                Target: Mile <span id="sunsprint-target-val">--</span>
+              </label>
+              <input type="range" id="sunsprint-target-slider" class="sunsprint-slider" min="0" max="100" step="1" value="0" />
+            </div>
+
             <div class="daylight-bar" role="img" aria-label="Daylight progress">
               <div class="daylight-bar__times" id="sunsprint-times" hidden>
                 <span class="daylight-bar__time-label">🌅 Sunrise: <span id="sunsprint-sunrise">--:--</span></span>
@@ -648,6 +672,49 @@ export function renderApp(container) {
           </label>
         </div>
         <div class="route-stats" id="route-stats" aria-label="Route summary"></div>
+
+        <!-- Smart Resource Radar Bottom Sheet -->
+        <div id="radar-bottom-sheet" class="radar-bottom-sheet collapsed" style="display: none;" aria-label="Live Resource Radar">
+          <div class="radar-handle"></div>
+          <div class="radar-summary">
+            <div class="radar-summary-item primary">
+              <span class="radar-label">Next Water</span>
+              <span class="radar-value" id="radar-water-next">--</span>
+            </div>
+            <div class="radar-summary-item">
+              <span class="radar-label">Camp</span>
+              <span class="radar-value" id="radar-camp-next">--</span>
+            </div>
+            <div class="radar-summary-item">
+              <span class="radar-label">Resupply</span>
+              <span class="radar-value" id="radar-resupply-next">--</span>
+            </div>
+          </div>
+          <div class="radar-details">
+            <h3 class="radar-section-title">Water Sources Ahead</h3>
+            <div id="radar-water-list">
+              <div class="radar-item">No upcoming water</div>
+            </div>
+            
+            <div class="radar-calculator">
+              <h3 class="radar-section-title">Water Carry Calculator</h3>
+              <div class="radar-calc-grid">
+                <label>
+                  Temp (&deg;F)
+                  <input type="number" id="radar-temp-input" class="radar-input" value="70" step="5" />
+                </label>
+                <label>
+                  Capacity (oz)
+                  <input type="number" id="radar-cap-input" class="radar-input" value="64" step="16" />
+                </label>
+                <div class="radar-calc-result">
+                  Dry stretch: <span id="radar-dry-stretch">--</span> mi<br/>
+                  Min carry: <strong id="radar-carry-req">--</strong> oz
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
 
         <!-- Start-at-mile offset control — visible once a route is loaded -->
         <div class="start-offset-row" id="start-offset-row" hidden>
@@ -916,6 +983,20 @@ function wireEvents(container) {
   simulateCheckbox.addEventListener('change', restartSimulation);
   simulateSpeedSelect.addEventListener('change', restartSimulation);
 
+  // Sunsprint Slider
+  const targetSlider = container.querySelector('#sunsprint-target-slider');
+  const targetValEl = container.querySelector('#sunsprint-target-val');
+
+  if (targetSlider && targetValEl) {
+    targetSlider.addEventListener('input', (e) => {
+      sunsprintTargetMile = Number(e.target.value);
+      targetValEl.textContent = sunsprintTargetMile.toFixed(1);
+      if (currentRoute) {
+        updateSunsprintDisplay(container, currentRoute, lastCurrentMile, lastPaceMph);
+      }
+    });
+  }
+
   // Listen for plan options changes from the planning view
   container.addEventListener('plan-options-change', (e) => {
     planOptions = e.detail;
@@ -1166,6 +1247,11 @@ function setMode(container, mode) {
 
   // Refresh map waypoints with the correct active stop highlights
   syncMapState();
+
+  if (radarController) {
+    if (mode === 'riding') radarController.start();
+    else radarController.stop();
+  }
 }
 
 /**
@@ -1201,10 +1287,18 @@ function applyRoute(container, route, skipEnrichment = false) {
     gpsManager.stop();
   }
   gpsManager = new GPSManager(route);
+  
+  if (radarController) {
+    radarController.stop();
+  }
+  radarController = new RadarController(route, gpsManager);
+  if (currentMode === 'riding') radarController.start();
+
   gpsManager.onLocationUpdate((data) => {
-    const currentMile = distanceFromStart(data.lat, data.lon, route.trackPoints);
-    updateResourceCards(container, route, currentMile);
-    updateSunsprintDisplay(container, route, currentMile, data.paceMph);
+    lastCurrentMile = distanceFromStart(data.lat, data.lon, route.trackPoints);
+    lastPaceMph = data.paceMph;
+    updateResourceCards(container, route, lastCurrentMile);
+    updateSunsprintDisplay(container, route, lastCurrentMile, lastPaceMph);
     updateUserLocationMarker(currentMap, data.lat, data.lon);
   });
 
@@ -1377,6 +1471,9 @@ export function updateSunsprintDisplay(container, route, currentMile, paceMph) {
   const timesEl = card.querySelector('#sunsprint-times');
   const trackEl = card.querySelector('#sunsprint-track');
   const bufferText = card.querySelector('#sunsprint-buffer-text');
+  const targetWrapper = card.querySelector('#sunsprint-target-wrapper');
+  const targetSlider = card.querySelector('#sunsprint-target-slider');
+  const targetVal = card.querySelector('#sunsprint-target-val');
 
   if (!route) {
     card.className = 'daylight-bar-card';
@@ -1384,6 +1481,7 @@ export function updateSunsprintDisplay(container, route, currentMile, paceMph) {
     if (timesEl) timesEl.hidden = true;
     if (trackEl) trackEl.hidden = true;
     if (bufferText) bufferText.hidden = true;
+    if (targetWrapper) targetWrapper.hidden = true;
     return;
   }
 
@@ -1391,13 +1489,35 @@ export function updateSunsprintDisplay(container, route, currentMile, paceMph) {
   if (timesEl) timesEl.hidden = false;
   if (trackEl) trackEl.hidden = false;
   if (bufferText) bufferText.hidden = false;
+  if (targetWrapper) targetWrapper.hidden = false;
 
-  const nextCamp = nextWaypointOfType(route, 'camping', currentMile);
-  const targetEndMile = nextCamp ? nextCamp.distanceFromStartMi : route.totalDistanceMiles;
-  const destinationName = nextCamp ? nextCamp.name : 'Finish';
+  const maxMiles = route.totalDistanceMiles;
+  
+  // Set slider min and max
+  if (targetSlider) {
+    const currentSliderMin = Number(targetSlider.min);
+    const newMin = Math.floor(currentMile);
+    if (currentSliderMin !== newMin) {
+      targetSlider.min = newMin;
+    }
+    
+    if (Number(targetSlider.max) !== Math.ceil(maxMiles)) {
+      targetSlider.max = Math.ceil(maxMiles);
+    }
+  }
 
+  if (sunsprintTargetMile === null) {
+    const nextCamp = nextWaypointOfType(route, 'camping', currentMile);
+    sunsprintTargetMile = nextCamp ? nextCamp.distanceFromStartMi : maxMiles;
+    if (targetSlider) {
+      targetSlider.value = sunsprintTargetMile;
+      if (targetVal) targetVal.textContent = sunsprintTargetMile.toFixed(1);
+    }
+  }
+
+  const destinationName = `Mile ${sunsprintTargetMile.toFixed(1)}`;
   const now = new Date();
-  const result = calculateDaylightBuffer(route, currentMile, paceMph, targetEndMile, now);
+  const result = calculateDaylightBuffer(route, currentMile, paceMph, sunsprintTargetMile, now);
 
   const formatTime = (date) => date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -1425,6 +1545,14 @@ export function updateSunsprintDisplay(container, route, currentMile, paceMph) {
   } else {
     bufferText.textContent = `🌅 ${Math.round(result.bufferMinutes)}m daylight buffer to ${destinationName}`;
   }
+
+  // Haptic alert on transition to red alert (<30m)
+  if (result.status === 'alert' && (lastSunsprintStatus === 'ok' || lastSunsprintStatus === 'warning')) {
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      try { navigator.vibrate([300, 200, 300]); } catch (e) { console.warn(e); }
+    }
+  }
+  lastSunsprintStatus = result.status;
 }
 
 /** @param {HTMLElement} container @param {import('./gpx.js').RouteContext} route */

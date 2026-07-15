@@ -1,0 +1,103 @@
+<?xml version="1.0" ?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <Placemark>
+      <name>Ashurst Lake Campground</name>
+      <description>Potable Water</description>
+      <Point>
+        <coordinates>-111.4082,34.9610,0</coordinates>
+      </Point>
+    </Placemark>
+    <Placemark>
+      <name>Canyon Vista Campground</name>
+      <description>Potable Water</description>
+      <Point>
+        <coordinates>-111.6033,34.9372,0</coordinates>
+      </Point>
+    </Placemark>
+    <Placemark>
+      <name>Cave Springs Campground</name>
+      <description>Potable Water</description>
+      <Point>
+        <coordinates>-111.7410,34.9947,0</coordinates>
+      </Point>
+    </Placemark>
+    <Placemark>
+      <name>Dairy Springs Campground</name>
+      <description>Potable Water</description>
+      <Point>
+        <coordinates>-111.4552,34.9355,0</coordinates>
+      </Point>
+    </Placemark>
+    <Placemark>
+      <name>Knoll Lake Campground</name>
+      <description>Potable Water</description>
+      <Point>
+        <coordinates>-111.1893,34.4286,0</coordinates>
+      </Point>
+    </Placemark>
+    <Placemark>
+      <name>Manzanita Campground</name>
+      <description>Potable Water</description>
+      <Point>
+        <coordinates>-111.7441,34.9298,0</coordinates>
+      </Point>
+    </Placemark>
+    <Placemark>
+      <name>Rock Crossing Campground</name>
+      <description>Potable Water</description>
+      <Point>
+        <coordinates>-111.1968,34.5683,0</coordinates>
+      </Point>
+    </Placemark>
+    <Placemark>
+      <name>Burnt Corral Campground</name>
+      <description>Potable Water</description>
+      <Point>
+        <coordinates>-111.1610,33.6335,0</coordinates>
+      </Point>
+    </Placemark>
+    <Placemark>
+      <name>Cholla Campground</name>
+      <description>Potable Water</description>
+      <Point>
+        <coordinates>-111.1215,33.6766,0</coordinates>
+      </Point>
+    </Placemark>
+    <Placemark>
+      <name>Frazier Horse Camp</name>
+      <description>Potable Water</description>
+      <Point>
+        <coordinates>-111.0858,33.6558,0</coordinates>
+      </Point>
+    </Placemark>
+    <Placemark>
+      <name>Sharp Creek Campground</name>
+      <description>Potable Water</description>
+      <Point>
+        <coordinates>-111.0250,34.3056,0</coordinates>
+      </Point>
+    </Placemark>
+    <Placemark>
+      <name>Tortilla Campground</name>
+      <description>Potable Water</description>
+      <Point>
+        <coordinates>-111.3855,33.5283,0</coordinates>
+      </Point>
+    </Placemark>
+    <Placemark>
+      <name>Upper Tonto Creek Campground</name>
+      <description>Potable Water</description>
+      <Point>
+        <coordinates>-111.1008,34.3323,0</coordinates>
+      </Point>
+    </Placemark>
+    <Placemark>
+      <name>Windy Hill Campground</name>
+      <description>Potable Water</description>
+      <Point>
+        <coordinates>-111.0504,33.6744,0</coordinates>
+      </Point>
+    </Placemark>
+  </Document>
+</kml>
