@@ -144,6 +144,33 @@ export class GPSManager {
   }
 
   /**
+   * Starts tracking in low-power mode for Ghost Mode battery savings.
+   */
+  startLowPowerTracking() {
+    this.stop();
+
+    if (!navigator.geolocation) {
+      console.warn('[BPNav] Geolocation is not supported by this browser.');
+      return;
+    }
+
+    this.watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        const { latitude, longitude, accuracy } = position.coords;
+        this._trigger({ lat: latitude, lon: longitude, accuracy, paceMph: 10 });
+      },
+      (error) => {
+        console.warn('[BPNav] Geolocation error:', error.message);
+      },
+      {
+        enableHighAccuracy: false,
+        timeout: 20000,
+        maximumAge: 10000,
+      },
+    );
+  }
+
+  /**
    * Stops any active tracking or simulation.
    */
   stop() {

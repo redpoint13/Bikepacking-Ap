@@ -7,6 +7,8 @@
  * @module gpx
  */
 
+import { calculateRouteDifficulty } from './difficulty.js';
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -227,6 +229,7 @@ function getText(el, tag) {
  * @property {{ lat: number, lon: number }} startPoint
  * @property {number} startOffsetMi  - Miles along the route where the rider starts (0 = true start)
  * @property {boolean} isLoop        - True when start and end are within 1 mile of each other
+ * @property {Object} metadata       - Route-specific metadata (forced stops, etc.)
  */
 export function parseGPX(xmlString) {
   const parser = new DOMParser();
@@ -258,7 +261,10 @@ export function parseGPX(xmlString) {
     const lon = Number.parseFloat(pt.getAttribute('lon'));
     if (Number.isNaN(lat) || Number.isNaN(lon)) continue;
 
-    trackPoints.push([lat, lon]);
+    const eleStr = getText(pt, 'ele');
+    const ele = eleStr ? Number.parseFloat(eleStr) : 0;
+
+    trackPoints.push([lat, lon, Number.isNaN(ele) ? 0 : ele]);
     if (lat < minLat) minLat = lat;
     if (lat > maxLat) maxLat = lat;
     if (lon < minLon) minLon = lon;
@@ -297,7 +303,6 @@ export function parseGPX(xmlString) {
     });
   }
 
-  // Sort waypoints by distance from start so the "nearest ahead" logic is easy
   waypoints.sort((a, b) => a.distanceFromStartMi - b.distanceFromStartMi);
 
   const totalDistanceMiles = computeRouteDistance(trackPoints);
@@ -313,7 +318,7 @@ export function parseGPX(xmlString) {
       trackPoints[trackPoints.length - 1][1],
     ) < 1.0;
 
-  return {
+  const routeCtx = {
     name,
     totalDistanceMiles,
     trackPoints,
@@ -322,7 +327,15 @@ export function parseGPX(xmlString) {
     startPoint,
     startOffsetMi: 0,
     isLoop,
+    metadata: {
+      forcedWaterIds: [],
+      forcedResupplyIds: [],
+      forcedCampIds: []
+    }
   };
+
+  routeCtx.difficulty = calculateRouteDifficulty(routeCtx);
+  return routeCtx;
 }
 
 // ---------------------------------------------------------------------------
@@ -460,6 +473,43 @@ export function getTrackSegmentForMiles(trackPoints, startMi, endMi) {
   }
 
   return trackPoints.slice(startIdx, endIdx + 1);
+}
+
+/**
+ * Calculates elevation gain and loss (in feet) for a segment of track points.
+ * Applies a 10ft noise filter threshold.
+ * @param {Array<[number, number, number]>} trackPoints 
+ * @param {number} startMi 
+ * @param {number} endMi 
+ * @returns {{gainFt: number, lossFt: number}}
+ */
+export function calculateElevation(trackPoints, startMi, endMi) {
+  const segment = getTrackSegmentForMiles(trackPoints, startMi, endMi);
+  if (segment.length < 2) return { gainFt: 0, lossFt: 0 };
+
+  let gain = 0;
+  let loss = 0;
+  // Threshold to avoid accumulating micro-fluctuations (e.g., 3 meters ~ 10ft)
+  const THRESHOLD_M = 3; 
+
+  let lastEle = segment[0][2] || 0;
+
+  for (let i = 1; i < segment.length; i++) {
+    const ele = segment[i][2] || 0;
+    const diff = ele - lastEle;
+
+    if (Math.abs(diff) > THRESHOLD_M) {
+      if (diff > 0) gain += diff;
+      else loss -= diff; // keep loss positive
+      lastEle = ele; // update only when we surpass threshold
+    }
+  }
+
+  // Convert meters to feet
+  return {
+    gainFt: Math.round(gain * 3.28084),
+    lossFt: Math.round(loss * 3.28084),
+  };
 }
 
 /**
@@ -630,3 +680,132 @@ export async function fetchOverpass(query) {
 
   throw new Error(`All Overpass mirrors failed. Last error: ${lastError?.message}`);
 }
+
+/**
+ * Fetches elevation profile from Open-Topo-Data API if track points lack elevation data.
+ * @param {import('./gpx.js').RouteContext} route
+ * @returns {Promise<import('./gpx.js').RouteContext>}
+ */
+export async function fetchElevationFallback(route) {
+  if (!route || !route.trackPoints || route.trackPoints.length === 0) return route;
+
+  const hasElevation = route.trackPoints.some((pt) => pt[2] != null && pt[2] !== 0);
+  if (hasElevation) return route;
+
+  const total = route.trackPoints.length;
+  const step = Math.max(1, Math.floor(total / 80));
+  const sampledIndices = [];
+  for (let i = 0; i < total; i += step) {
+    sampledIndices.push(i);
+  }
+  if (sampledIndices[sampledIndices.length - 1] !== total - 1) {
+    sampledIndices.push(total - 1);
+  }
+
+  const locationsStr = sampledIndices
+    .map((idx) => `${route.trackPoints[idx][0].toFixed(5)},${route.trackPoints[idx][1].toFixed(5)}`)
+    .join('|');
+
+  const url = `https://api.opentopodata.org/v1/ned10m?locations=${locationsStr}`;
+
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) throw new Error(`Open-Topo-Data HTTP ${res.status}`);
+    const data = await res.json();
+    const results = data.results ?? [];
+
+    if (results.length > 0) {
+      let rIdx = 0;
+      for (let i = 0; i < total; i++) {
+        if (rIdx < results.length) {
+          const ele = results[rIdx].elevation ?? 0;
+          route.trackPoints[i][2] = ele;
+          if (sampledIndices[rIdx + 1] != null && i >= sampledIndices[rIdx + 1]) {
+            rIdx++;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[BPNav] Open-Topo-Data elevation fallback fetch failed:', err.message);
+  }
+
+  return route;
+}
+
+/**
+ * Generates sampled elevation profile data with slope gradients and pass summits.
+ * @param {import('./gpx.js').RouteContext} route
+ * @param {number} [numSamples=200]
+ * @returns {Array<{ distanceMi: number, elevationFt: number, gradePercent: number, gradeColor: string, isSummit: boolean, lat: number, lon: number }>}
+ */
+export function computeElevationProfileSamples(route, numSamples = 200) {
+  if (!route || !route.trackPoints || route.trackPoints.length < 2) return [];
+
+  const points = route.trackPoints;
+  const totalDist = route.totalDistanceMiles || 0;
+  if (totalDist <= 0) return [];
+
+  // Compute cumulative distances for trackpoints
+  const cumDist = [0];
+  let acc = 0;
+  for (let i = 1; i < points.length; i++) {
+    acc += haversineDistance(points[i - 1][0], points[i - 1][1], points[i][0], points[i][1]);
+    cumDist.push(acc);
+  }
+
+  const step = totalDist / Math.max(10, numSamples);
+  const samples = [];
+
+  for (let d = 0; d <= totalDist; d += step) {
+    const targetMi = Math.min(totalDist, d);
+    let idx = 0;
+    while (idx < cumDist.length - 1 && cumDist[idx + 1] < targetMi) {
+      idx++;
+    }
+
+    const [lat, lon, eleMeters] = points[idx];
+    const eleFt = (eleMeters ?? 0) * 3.28084;
+
+    // Calculate grade percentage using previous sample
+    let grade = 0;
+    if (samples.length > 0) {
+      const prev = samples[samples.length - 1];
+      const distDeltaMiles = targetMi - prev.distanceMi;
+      const eleDeltaFeet = eleFt - prev.elevationFt;
+      if (distDeltaMiles > 0.001) {
+        grade = (eleDeltaFeet / (distDeltaMiles * 5280)) * 100;
+      }
+    }
+
+    let gradeColor = '#4caf50'; // Green (<5%)
+    if (Math.abs(grade) >= 10) {
+      gradeColor = '#f44336'; // Red (>10%)
+    } else if (Math.abs(grade) >= 5) {
+      gradeColor = '#ffeb3b'; // Yellow (5-9%)
+    }
+
+    samples.push({
+      distanceMi: Number(targetMi.toFixed(2)),
+      elevationFt: Math.round(eleFt),
+      gradePercent: Number(grade.toFixed(1)),
+      gradeColor,
+      isSummit: false,
+      lat,
+      lon,
+    });
+  }
+
+  // Identify local mountain pass summits (peaks higher than neighbors by >150ft)
+  for (let i = 2; i < samples.length - 2; i++) {
+    const curr = samples[i].elevationFt;
+    const prev2 = samples[i - 2].elevationFt;
+    const next2 = samples[i + 2].elevationFt;
+    if (curr > prev2 + 150 && curr > next2 + 150) {
+      samples[i].isSummit = true;
+    }
+  }
+
+  return samples;
+}
+

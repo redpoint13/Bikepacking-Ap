@@ -58,7 +58,7 @@ describe('parseGPX — structure', () => {
 
   it('extracts track points as [lat, lon] pairs', () => {
     expect(route.trackPoints).toHaveLength(3);
-    expect(route.trackPoints[0]).toEqual([35.1989, -111.6537]);
+    expect(route.trackPoints[0].slice(0, 2)).toEqual([35.1989, -111.6537]);
   });
 
   it('computes totalDistanceMiles > 0', () => {

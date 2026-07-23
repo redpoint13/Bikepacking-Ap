@@ -17,7 +17,8 @@ const MAPLIBRE_CSS = path.resolve(maplibrePkgDir, maplibrePkg.style ?? 'dist/map
 export default defineConfig({
   server: {
     port: 5173,
-    strictPort: true,
+    strictPort: false,
+    host: true,
   },
   preview: {
     port: 5173,
@@ -98,7 +99,7 @@ export default defineConfig({
               cacheName: 'map-tiles',
               expiration: {
                 maxAgeSeconds: 60 * 60 * 24 * 30,
-                maxEntries: 1000,
+                maxEntries: 15000,
               },
             },
           },

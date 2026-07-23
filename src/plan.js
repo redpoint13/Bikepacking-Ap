@@ -13,6 +13,9 @@
  */
 
 import { isReliableWater } from './triplog.js';
+import { getCoordinatesAtMile, calculateElevation } from './gpx.js';
+import { inferResupplyCategory } from './enrichment.js';
+import { calculateSegmentDifficulty } from './difficulty.js';
 
 // ---------------------------------------------------------------------------
 // Defaults — all overridable from the Planning UI
@@ -49,6 +52,18 @@ export const PLAN_DEFAULTS = {
   excludedCampIds: [],
   /** Array of camp waypoint IDs to explicitly force as stops. */
   forcedCampIds: [],
+  /** User manual stop states map: waypointId -> 'planned' | 'optional' | 'skipped' */
+  userStopStates: {},
+  /** Per-day selected camp option: dayNum -> 'short' | 'medium' | 'long' | campId */
+  dayCampSelections: {},
+  /** Target mileage range for Short ride day. */
+  shortDayRange: { min: 20, max: 35 },
+  /** Target mileage range for Medium ride day. */
+  mediumDayRange: { min: 36, max: 55 },
+  /** Target mileage range for Long ride day. */
+  longDayRange: { min: 56, max: 85 },
+  /** Global day pace target: 'short' | 'medium' | 'long' */
+  dayPacePreset: 'medium',
   /** Target calorie intake per riding day (kcal). */
   caloriesPerDay: 3500,
   /** Number of camp meals carried and eaten per day (usually dinner). */
@@ -60,6 +75,49 @@ export const PLAN_DEFAULTS = {
   /** Max detour distance off-route (miles) to include resources. */
   maxDetourMi: 1.5,
 };
+
+/**
+ * Merges userStopStates into the specific excluded/forced arrays.
+ * @param {typeof PLAN_DEFAULTS} opts
+ * @param {import('./gpx.js').Waypoint[]} waypoints
+ * @returns {typeof PLAN_DEFAULTS}
+ */
+export function resolveOptions(opts, waypoints = []) {
+  const o = { ...PLAN_DEFAULTS, ...opts };
+  if (!o.userStopStates) return o;
+
+  const excludedWater = new Set(o.excludedWaterIds || []);
+  const forcedWater = new Set(o.forcedWaterIds || []);
+  const excludedResupply = new Set(o.excludedResupplyIds || []);
+  const forcedResupply = new Set(o.forcedResupplyIds || []);
+  const excludedCamp = new Set(o.excludedCampIds || []);
+  const forcedCamp = new Set(o.forcedCampIds || []);
+
+  for (const [id, state] of Object.entries(o.userStopStates)) {
+    const wp = waypoints.find((w) => w.id === id);
+    const type = wp?.type;
+
+    if (state === 'skipped') {
+      if (type === 'water') excludedWater.add(id);
+      else if (type === 'resupply') excludedResupply.add(id);
+      else if (type === 'camping') excludedCamp.add(id);
+    } else if (state === 'planned') {
+      if (type === 'water') forcedWater.add(id);
+      else if (type === 'resupply') forcedResupply.add(id);
+      else if (type === 'camping') forcedCamp.add(id);
+    }
+  }
+
+  return {
+    ...o,
+    excludedWaterIds: Array.from(excludedWater),
+    forcedWaterIds: Array.from(forcedWater),
+    excludedResupplyIds: Array.from(excludedResupply),
+    forcedResupplyIds: Array.from(forcedResupply),
+    excludedCampIds: Array.from(excludedCamp),
+    forcedCampIds: Array.from(forcedCamp),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -99,7 +157,7 @@ const round1 = (n) => Number(n.toFixed(1));
  * }>}
  */
 export function computeWaterCarry(route, opts = {}) {
-  const o = { ...PLAN_DEFAULTS, ...opts };
+  const o = resolveOptions(opts, resourceWaypoints(route));
   const total = route.totalDistanceMiles ?? 0;
   const waypoints = resourceWaypoints(route);
 
@@ -109,17 +167,17 @@ export function computeWaterCarry(route, opts = {}) {
   const forcedResupply = new Set(o.forcedResupplyIds);
 
   // Candidate water waypoints: reliable water OR forced water OR active resupplies,
-  // excluding off-track stops (detour > 0.1 mi) unless explicitly forced.
+  // excluding off-track stops (detour > 0.25 mi) unless explicitly forced.
   const candidates = waypoints.filter((wp) => {
     if (wp.type === 'water') {
       if (excludedWater.has(wp.id)) return false;
-      const isOffTrack = (wp.offCourseDistanceMi || 0) > 0.1;
+      const isOffTrack = (wp.offCourseDistanceMi || 0) > 0.25;
       if (isOffTrack && !forcedWater.has(wp.id)) return false;
       return isReliableWater(wp, o.reliableWaterThreshold) || forcedWater.has(wp.id);
     }
     if (wp.type === 'resupply') {
       if (excludedResupply.has(wp.id)) return false;
-      const isOffTrack = (wp.offCourseDistanceMi || 0) > 0.1;
+      const isOffTrack = (wp.offCourseDistanceMi || 0) > 0.25;
       if (isOffTrack && !forcedResupply.has(wp.id)) return false;
       return true;
     }
@@ -156,8 +214,8 @@ export function computeWaterCarry(route, opts = {}) {
   let iterations = 0;
 
   while (emergency && iterations < guard) {
-    // If we have an emergency stretch, look for ANY valid water/resupply waypoint
-    // that is within maxDetourMi (even if off-track > 0.1 mi) to resolve the capacity gap.
+    // If there's an emergency, find the best intermediate water source
+    // that is within maxDetourMi (even if off-track > 0.25 mi) to resolve the capacity gap.
     const potentialHelpers = waypoints.filter((w) => {
       if (w.type !== 'water' && w.type !== 'resupply') return false;
       if (w.type === 'water' && excludedWater.has(w.id)) return false;
@@ -233,79 +291,62 @@ export function optimizeWaterStops(route, candidates, o) {
   const total = route.totalDistanceMiles ?? 0;
   const forcedWater = new Set(o.forcedWaterIds);
 
-  // Nodes: Start (0), candidates (1..N), Finish (N+1)
   const nodes = [
-    { mi: 0, name: 'Start', isWater: false, wp: null },
+    { mi: 0, name: 'Start', wp: null },
     ...candidates.map((wp) => ({
       mi: wp.distanceFromStartMi,
       name: wp.name,
-      isWater: true,
       wp,
     })),
-    { mi: total, name: 'Finish', isWater: false, wp: null },
+    { mi: total, name: 'Finish', wp: null },
   ];
 
-  const n = nodes.length;
-  const dp = new Array(n).fill(Number.POSITIVE_INFINITY);
-  const parent = new Array(n).fill(-1);
-
-  dp[0] = 0;
-
-  for (let i = 0; i < n; i++) {
-    if (dp[i] === Number.POSITIVE_INFINITY) continue;
-
-    for (let j = i + 1; j < n; j++) {
-      const dist = nodes[j].mi - nodes[i].mi;
-      const waterNeededOz = dist * o.ozPerMile;
-
-      // Constraint: Cannot exceed water capacity
-      // Fallback: If the next immediate node is beyond capacity, we must allow it.
-      if (waterNeededOz > o.waterCapacityOz && j > i + 1) {
-        continue;
-      }
-
-      // Constraint: Cannot bypass any forced water stops!
-      let bypassedForced = false;
-      for (let k = i + 1; k < j; k++) {
-        if (nodes[k].isWater && nodes[k].wp.type === 'water' && forcedWater.has(nodes[k].wp.id)) {
-          bypassedForced = true;
+  const chosen = [];
+  let lastStopMi = 0;
+  
+  for (let i = 1; i < nodes.length - 1; i++) {
+    const node = nodes[i];
+    const waterLevelOz = o.waterCapacityOz - (node.mi - lastStopMi) * o.ozPerMile;
+    
+    let shouldStop = false;
+    
+    // Condition 0: Forced Stop
+    if (forcedWater.has(node.wp.id)) {
+      shouldStop = true;
+    }
+    
+    // Condition 1: Less than 25% capacity
+    if (!shouldStop && waterLevelOz < o.waterCapacityOz * 0.25) {
+      shouldStop = true;
+    }
+    
+    // Condition 2: Cannot reach the next ON-TRACK water source
+    if (!shouldStop) {
+      let nextOnTrackNode = null;
+      for (let k = i + 1; k < nodes.length; k++) {
+        if (k === nodes.length - 1) {
+          nextOnTrackNode = nodes[k]; // Finish line is always "on track"
+          break;
+        }
+        const wp = nodes[k].wp;
+        if ((wp.offCourseDistanceMi || 0) <= 0.05) {
+          nextOnTrackNode = nodes[k];
           break;
         }
       }
-      if (bypassedForced) {
-        continue;
-      }
-
-      // Cost = dp[i] + stopCost + carryCost
-      // Towns/stores/resupplies are fast to refill (tap/store) and we stop there anyway, so overhead is 2m.
-      const isResupply = nodes[j].wp && nodes[j].wp.type === 'resupply';
-      const stopCost = nodes[j].isWater ? (isResupply ? 2 : o.stopOverheadMinutes) : 0;
-      // Average water carried * distance * weight penalty
-      const carryCost = (waterNeededOz / 2) * dist * o.waterWeightPenalty;
-
-      const totalCost = dp[i] + stopCost + carryCost;
-
-      if (totalCost < dp[j]) {
-        dp[j] = totalCost;
-        parent[j] = i;
+      
+      if (nextOnTrackNode) {
+        const distToNext = nextOnTrackNode.mi - node.mi;
+        const waterNeededToNext = distToNext * o.ozPerMile;
+        if (waterLevelOz < waterNeededToNext) {
+          shouldStop = true;
+        }
       }
     }
-  }
-
-  // Reconstruct path
-  const path = [];
-  let curr = n - 1;
-  while (curr !== -1) {
-    path.push(curr);
-    curr = parent[curr];
-  }
-  path.reverse();
-
-  // Extract water waypoints
-  const chosen = [];
-  for (const idx of path) {
-    if (nodes[idx].isWater && nodes[idx].wp) {
-      chosen.push(nodes[idx].wp);
+    
+    if (shouldStop) {
+      chosen.push(node.wp);
+      lastStopMi = node.mi;
     }
   }
 
@@ -330,7 +371,7 @@ export function optimizeWaterStops(route, candidates, o) {
  * }>}
  */
 export function computeFoodCarry(route, opts = {}) {
-  const o = { ...PLAN_DEFAULTS, ...opts };
+  const o = resolveOptions(opts, resourceWaypoints(route));
   const total = route.totalDistanceMiles ?? 0;
   const waypoints = resourceWaypoints(route);
   const excludedResupply = new Set(o.excludedResupplyIds);
@@ -341,9 +382,9 @@ export function computeFoodCarry(route, opts = {}) {
     (wp) => wp.type === 'resupply' && !excludedResupply.has(wp.id),
   );
 
-  // 2. Active resupplies: only include on-track resupplies (detour <= 0.1 mi) by default, or forced ones!
+  // 2. Active resupplies: only include on-track resupplies (detour <= 0.25 mi) by default, or forced ones!
   const activeResupplies = candidates.filter(
-    (w) => (w.offCourseDistanceMi || 0) <= 0.1 || forcedResupply.has(w.id),
+    (w) => (w.offCourseDistanceMi || 0) <= 0.25 || forcedResupply.has(w.id),
   );
 
   // Loop to resolve resupply emergencies (distance between resupplies > 3 days of riding)
@@ -386,11 +427,19 @@ export function computeFoodCarry(route, opts = {}) {
     iterations++;
   }
 
-  const anchors = [{ mi: 0, name: 'Start' }];
+  const anchors = [{ mi: 0, name: 'Start', category: 'grocery' }];
   for (const wp of activeResupplies) {
-    anchors.push({ mi: wp.distanceFromStartMi, name: wp.name || 'Resupply' });
+    const cat = wp.resupplyCategory || inferResupplyCategory(wp.name, wp.description, wp.tags || {});
+    anchors.push({ mi: wp.distanceFromStartMi, name: wp.name || 'Resupply', category: cat, wp });
   }
-  anchors.push({ mi: total, name: 'Finish' });
+  anchors.push({ mi: total, name: 'Finish', category: 'none' });
+
+  const categoryLabels = {
+    grocery: 'Full Grocery',
+    cstore: 'Gas Station / C-Store',
+    restaurant: 'Restaurant / Diner',
+    none: 'No Resupply',
+  };
 
   const spans = [];
   for (let i = 1; i < anchors.length; i++) {
@@ -402,7 +451,11 @@ export function computeFoodCarry(route, opts = {}) {
     const daysFloat = miles / o.targetDailyMiles;
     const totalCalories = Math.round(daysFloat * o.caloriesPerDay);
 
-    const campMeals = Math.round(daysFloat * o.campMealsPerDay);
+    let campMeals = Math.round(daysFloat * o.campMealsPerDay);
+    if (to.category === 'restaurant') {
+      campMeals = Math.max(0, campMeals - 1);
+    }
+
     const campMealCalories = campMeals * o.caloriesPerCampMeal;
 
     const snackCalories = Math.max(0, totalCalories - campMealCalories);
@@ -412,8 +465,12 @@ export function computeFoodCarry(route, opts = {}) {
     spans.push({
       fromMi: round1(from.mi),
       fromName: from.name,
+      fromCategory: from.category,
+      fromCategoryLabel: categoryLabels[from.category] || 'Resupply',
       toMi: round1(to.mi),
       toName: to.name,
+      toCategory: to.category,
+      toCategoryLabel: categoryLabels[to.category] || 'Resupply',
       miles: round1(miles),
       days: Math.max(1, Math.ceil(miles / o.targetDailyMiles)),
       daysFloat: round1(daysFloat),
@@ -480,7 +537,7 @@ function pickCampNear(camps, afterMi, targetMi, windowLo, windowHi) {
  * @property {boolean} isFinish
  */
 export function buildDayPlan(route, opts = {}) {
-  const o = { ...PLAN_DEFAULTS, ...opts };
+  const o = resolveOptions(opts, resourceWaypoints(route));
   const total = route.totalDistanceMiles ?? 0;
   const waypoints = resourceWaypoints(route);
   const excludedCamps = new Set(o.excludedCampIds);
@@ -513,6 +570,12 @@ export function buildDayPlan(route, opts = {}) {
     const endMi = camp.distanceFromStartMi;
     const waterInfo = nextWaterFrom(endMi);
     const foodInfo = nextFoodFrom(endMi);
+    
+    const { gainFt, lossFt } = calculateElevation(route.trackPoints, startMi, endMi);
+    const waterOptions = waypoints.filter(w => w.type === 'water' && w.distanceFromStartMi > startMi + 0.05 && w.distanceFromStartMi <= endMi + 0.05 && isReliableWater(w, o.reliableWaterThreshold)).length;
+    const resupplyOptions = waypoints.filter(w => w.type === 'resupply' && w.distanceFromStartMi > startMi + 0.05 && w.distanceFromStartMi <= endMi + 0.05).length;
+    const difficulty = calculateSegmentDifficulty(route.trackPoints, startMi, endMi, { surfaceFactor: o.surfaceFactor });
+
     return {
       campId: camp.id,
       campName: camp.name || 'Camp',
@@ -522,21 +585,38 @@ export function buildDayPlan(route, opts = {}) {
       nextWaterName: waterInfo ? waterInfo.name : null,
       nextFoodMi: foodInfo ? foodInfo.miles : null,
       nextFoodName: foodInfo ? foodInfo.name : null,
+      eleGainFt: gainFt,
+      eleLossFt: lossFt,
+      waterOptions,
+      resupplyOptions,
+      difficulty,
       isFinish: false,
     };
   };
 
-  const finishOption = (startMi) => ({
-    campId: 'finish',
-    campName: 'Finish',
-    endMi: round1(total),
-    miles: round1(total - startMi),
-    nextWaterMi: null,
-    nextWaterName: null,
-    nextFoodMi: null,
-    nextFoodName: null,
-    isFinish: true,
-  });
+  const finishOption = (startMi) => {
+    const { gainFt, lossFt } = calculateElevation(route.trackPoints, startMi, total);
+    const waterOptions = waypoints.filter(w => w.type === 'water' && w.distanceFromStartMi > startMi + 0.05 && w.distanceFromStartMi <= total + 0.05 && isReliableWater(w, o.reliableWaterThreshold)).length;
+    const resupplyOptions = waypoints.filter(w => w.type === 'resupply' && w.distanceFromStartMi > startMi + 0.05 && w.distanceFromStartMi <= total + 0.05).length;
+    const difficulty = calculateSegmentDifficulty(route.trackPoints, startMi, total, { surfaceFactor: o.surfaceFactor });
+
+    return {
+      campId: 'finish',
+      campName: 'Finish',
+      endMi: round1(total),
+      miles: round1(total - startMi),
+      nextWaterMi: null,
+      nextWaterName: null,
+      nextFoodMi: null,
+      nextFoodName: null,
+      eleGainFt: gainFt,
+      eleLossFt: lossFt,
+      waterOptions,
+      resupplyOptions,
+      difficulty,
+      isFinish: true,
+    };
+  };
 
   const days = [];
   let startMi = 0;
@@ -579,69 +659,74 @@ export function buildDayPlan(route, opts = {}) {
     let medium = medCamp ? makeOption(medCamp, startMi) : null;
     let long = longCamp ? makeOption(longCamp, startMi) : null;
 
-    if (!short) {
-      const targetShort = startMi + o.targetDailyMiles * 0.75;
-      const waterInfo = nextWaterFrom(targetShort);
-      const foodInfo = nextFoodFrom(targetShort);
-      short = {
-        campId: `synth-camp-${dayNum}-short`,
-        campName: 'Wilderness Camp',
-        endMi: round1(targetShort),
-        miles: round1(o.targetDailyMiles * 0.75),
+    const makeSyntheticOption = (startMi, endMi, dayNum, tierLabel) => {
+      const targetMi = Math.min(total, round1(endMi));
+      const campId = `synth-camp-d${dayNum}-${tierLabel}`;
+      const waterInfo = nextWaterFrom(targetMi);
+      const foodInfo = nextFoodFrom(targetMi);
+      const { gainFt, lossFt } = calculateElevation(route.trackPoints, startMi, targetMi);
+      const waterOptions = waypoints.filter(
+        w => w.type === 'water' && w.distanceFromStartMi > startMi + 0.05 && w.distanceFromStartMi <= targetMi + 0.05 && isReliableWater(w, o.reliableWaterThreshold)
+      ).length;
+      const resupplyOptions = waypoints.filter(
+        w => w.type === 'resupply' && w.distanceFromStartMi > startMi + 0.05 && w.distanceFromStartMi <= targetMi + 0.05
+      ).length;
+      const difficulty = calculateSegmentDifficulty(route.trackPoints, startMi, targetMi, { surfaceFactor: o.surfaceFactor });
+
+      return {
+        campId,
+        campName: `Dispersed Camp (mi ${targetMi.toFixed(1)})`,
+        endMi: targetMi,
+        miles: round1(targetMi - startMi),
         nextWaterMi: waterInfo ? waterInfo.miles : null,
         nextWaterName: waterInfo ? waterInfo.name : null,
         nextFoodMi: foodInfo ? foodInfo.miles : null,
         nextFoodName: foodInfo ? foodInfo.name : null,
-        isFinish: false,
+        eleGainFt: gainFt,
+        eleLossFt: lossFt,
+        waterOptions,
+        resupplyOptions,
+        difficulty,
+        isFinish: targetMi >= total - 0.05,
       };
-    }
-    if (!medium) {
-      const targetMed = startMi + o.targetDailyMiles;
-      const waterInfo = nextWaterFrom(targetMed);
-      const foodInfo = nextFoodFrom(targetMed);
-      medium = {
-        campId: `synth-camp-${dayNum}-med`,
-        campName: 'Wilderness Camp',
-        endMi: round1(targetMed),
-        miles: round1(o.targetDailyMiles),
-        nextWaterMi: waterInfo ? waterInfo.miles : null,
-        nextWaterName: waterInfo ? waterInfo.name : null,
-        nextFoodMi: foodInfo ? foodInfo.miles : null,
-        nextFoodName: foodInfo ? foodInfo.name : null,
-        isFinish: false,
-      };
-    }
-    if (!long) {
-      const targetLong = startMi + o.targetDailyMiles * 1.25;
-      const waterInfo = nextWaterFrom(targetLong);
-      const foodInfo = nextFoodFrom(targetLong);
-      long = {
-        campId: `synth-camp-${dayNum}-long`,
-        campName: 'Wilderness Camp',
-        endMi: round1(targetLong),
-        miles: round1(o.targetDailyMiles * 1.25),
-        nextWaterMi: waterInfo ? waterInfo.miles : null,
-        nextWaterName: waterInfo ? waterInfo.name : null,
-        nextFoodMi: foodInfo ? foodInfo.miles : null,
-        nextFoodName: foodInfo ? foodInfo.name : null,
-        isFinish: false,
-      };
+    };
+
+    if (!short && !medium && !long) {
+      // Find the camp closest to the target daily mileage to minimize stretching/shrinking the day
+      let fallbackCamp = null;
+      let minDelta = Infinity;
+      const target = startMi + o.targetDailyMiles;
+      const maxAllowedDelta = o.targetDailyMiles * 0.45; // Max ~15 miles off target daily miles
+      
+      for (const c of camps) {
+        if (c.distanceFromStartMi > startMi + 0.05) {
+          const delta = Math.abs(c.distanceFromStartMi - target);
+          if (delta < minDelta) {
+            minDelta = delta;
+            fallbackCamp = c;
+          }
+        }
+      }
+      
+      if (fallbackCamp && minDelta <= maxAllowedDelta) {
+        medium = makeOption(fallbackCamp, startMi);
+      } else {
+        medium = makeSyntheticOption(startMi, startMi + o.targetDailyMiles, dayNum, 'med');
+        short = makeSyntheticOption(startMi, startMi + o.targetDailyMiles * 0.75, dayNum, 'short');
+        long = makeSyntheticOption(startMi, startMi + o.targetDailyMiles * 1.25, dayNum, 'long');
+      }
     }
 
-    let chosen = medium;
-    if (short && o.forcedCampIds.includes(short.campId)) {
-      chosen = short;
-    } else if (medium && o.forcedCampIds.includes(medium.campId)) {
-      chosen = medium;
-    } else if (long && o.forcedCampIds.includes(long.campId)) {
-      chosen = long;
-    } else if (medCamp && o.forcedCampIds.includes(medCamp.id)) {
-      chosen = medium;
-    } else if (shortCamp && o.forcedCampIds.includes(shortCamp.id)) {
-      chosen = short;
-    } else if (longCamp && o.forcedCampIds.includes(longCamp.id)) {
-      chosen = long;
-    }
+    const daySelection = o.dayCampSelections?.[dayNum] || o.dayPacePreset || 'medium';
+    let chosen = null;
+
+    if (daySelection === 'short' && short) chosen = short;
+    else if (daySelection === 'long' && long) chosen = long;
+    else if (daySelection === 'medium' && medium) chosen = medium;
+    else if (short && (o.forcedCampIds.includes(short.campId) || daySelection === short.campId)) chosen = short;
+    else if (medium && (o.forcedCampIds.includes(medium.campId) || daySelection === medium.campId)) chosen = medium;
+    else if (long && (o.forcedCampIds.includes(long.campId) || daySelection === long.campId)) chosen = long;
+    else chosen = medium || short || long;
 
     days.push({
       day: dayNum,
@@ -673,4 +758,206 @@ export function buildPlan(route, opts = {}) {
     foodCarry: computeFoodCarry(route, o),
     dayPlan: buildDayPlan(route, o),
   };
+}
+
+/**
+ * Computes the set of waypoint IDs that are currently active stops (water, resupply, camp).
+ * @param {import('./gpx.js').RouteContext} route
+ * @param {typeof PLAN_DEFAULTS} opts
+ * @returns {Set<string>}
+ */
+export function getActiveStopIds(route, opts) {
+  const activeIds = new Set();
+  if (!route) return activeIds;
+
+  const total = route.totalDistanceMiles ?? 0;
+  const waypoints = [...route.waypoints].sort(
+    (a, b) => a.distanceFromStartMi - b.distanceFromStartMi,
+  );
+
+  const excludedWater = new Set(opts.excludedWaterIds);
+  const forcedWater = new Set(opts.forcedWaterIds);
+  const excludedResupply = new Set(opts.excludedResupplyIds);
+  const forcedResupply = new Set(opts.forcedResupplyIds);
+
+  // Filter water candidates
+  const waterWpts = waypoints.filter((w) => w.type === 'water');
+  const waterCandidates = waterWpts.filter((wp) => {
+    if (excludedWater.has(wp.id)) return false;
+    const isOffTrack = (wp.offCourseDistanceMi || 0) > 0.25;
+    if (isOffTrack && !forcedWater.has(wp.id)) return false;
+    return (wp.reliability ?? 0) >= opts.reliableWaterThreshold || forcedWater.has(wp.id);
+  });
+
+  // Filter resupply candidates
+  const resupplyWpts = waypoints.filter((w) => w.type === 'resupply');
+  const activeResupplies = resupplyWpts.filter((w) => {
+    if (excludedResupply.has(w.id)) return false;
+    const isOffTrack = (w.offCourseDistanceMi || 0) > 0.25;
+    if (isOffTrack && !forcedResupply.has(w.id)) return false;
+    return true;
+  });
+
+  const waterStops = opts.optimizeWaterStops
+    ? optimizeWaterStops(route, [...waterCandidates, ...activeResupplies], opts)
+    : waterCandidates;
+
+  // Filter water stops by detour
+  const filteredWaterStops = waterStops.filter((wp) => {
+    const isForced = wp.type === 'water' ? forcedWater.has(wp.id) : forcedResupply.has(wp.id);
+    return (wp.offCourseDistanceMi || 0) <= opts.maxDetourMi || isForced;
+  });
+
+  // Resolve water emergencies
+  const findEmergencyStretch = (activeStops) => {
+    const anchors = [0, ...activeStops.map((s) => s.distanceFromStartMi), total];
+    for (let i = 1; i < anchors.length; i++) {
+      const dist = anchors[i] - anchors[i - 1];
+      if (dist * opts.ozPerMile > opts.waterCapacityOz) {
+        return { start: anchors[i - 1], end: anchors[i] };
+      }
+    }
+    return null;
+  };
+
+  let emergency = findEmergencyStretch(filteredWaterStops);
+  const guard = 100;
+  let iterations = 0;
+
+  while (emergency && iterations < guard) {
+    const potentialHelpers = waypoints.filter((w) => {
+      if (w.type !== 'water' && w.type !== 'resupply') return false;
+      if (w.type === 'water' && excludedWater.has(w.id)) return false;
+      if (w.type === 'resupply' && excludedResupply.has(w.id)) return false;
+
+      const mi = w.distanceFromStartMi;
+      const offCourse = w.offCourseDistanceMi || 0;
+      const isValidHelper = offCourse <= opts.maxDetourMi;
+
+      const isAlreadyActive = filteredWaterStops.some((s) => s.id === w.id);
+
+      return (
+        isValidHelper && !isAlreadyActive && mi > emergency.start + 0.1 && mi < emergency.end - 0.1
+      );
+    });
+
+    if (potentialHelpers.length === 0) {
+      break;
+    }
+
+    const mid = (emergency.start + emergency.end) / 2;
+    potentialHelpers.sort(
+      (a, b) => Math.abs(a.distanceFromStartMi - mid) - Math.abs(b.distanceFromStartMi - mid),
+    );
+
+    filteredWaterStops.push(potentialHelpers[0]);
+    filteredWaterStops.sort((a, b) => a.distanceFromStartMi - b.distanceFromStartMi);
+
+    emergency = findEmergencyStretch(filteredWaterStops);
+    iterations++;
+  }
+
+  for (const wp of filteredWaterStops) {
+    activeIds.add(wp.id);
+  }
+
+  // Food resupplies
+  const activeResupplyStops = activeResupplies;
+
+  // Resolve food emergencies
+  const maxFoodCarryMiles = opts.targetDailyMiles * 3;
+  const findFoodEmergency = (activeStops) => {
+    const milesList = [0, ...activeStops.map((s) => s.distanceFromStartMi), total];
+    for (let i = 1; i < milesList.length; i++) {
+      const dist = milesList[i] - milesList[i - 1];
+      if (dist > maxFoodCarryMiles) {
+        return { start: milesList[i - 1], end: milesList[i] };
+      }
+    }
+    return null;
+  };
+
+  let foodEmergency = findFoodEmergency(activeResupplyStops);
+  let foodIterations = 0;
+
+  while (foodEmergency && foodIterations < guard) {
+    const potentialHelpers = resupplyWpts.filter((w) => {
+      if (excludedResupply.has(w.id)) return false;
+      const mi = w.distanceFromStartMi;
+      const isWithinDetour = (w.offCourseDistanceMi || 0) <= opts.maxDetourMi;
+      const isAlreadyActive = activeResupplyStops.some((s) => s.id === w.id);
+
+      return (
+        isWithinDetour &&
+        !isAlreadyActive &&
+        mi > foodEmergency.start + 1.0 &&
+        mi < foodEmergency.end - 1.0
+      );
+    });
+
+    if (potentialHelpers.length === 0) {
+      break;
+    }
+
+    const mid = (foodEmergency.start + foodEmergency.end) / 2;
+    potentialHelpers.sort(
+      (a, b) => Math.abs(a.distanceFromStartMi - mid) - Math.abs(b.distanceFromStartMi - mid),
+    );
+
+    activeResupplyStops.push(potentialHelpers[0]);
+    activeResupplyStops.sort((a, b) => a.distanceFromStartMi - b.distanceFromStartMi);
+
+    foodEmergency = findFoodEmergency(activeResupplyStops);
+    foodIterations++;
+  }
+
+  for (const wp of activeResupplyStops) {
+    activeIds.add(wp.id);
+  }
+
+  // 3. Camp stops (all camps chosen in day plan)
+  const plan = buildPlan(route, opts);
+  for (const d of plan.dayPlan) {
+    if (d.chosen?.campId) {
+      activeIds.add(d.chosen.campId);
+    }
+  }
+
+  return activeIds;
+}
+
+/**
+ * Returns waypoints with synthetic camp options included so they can be drawn on the map.
+ * @param {import('./gpx.js').RouteContext} route
+ * @param {typeof PLAN_DEFAULTS} opts
+ * @returns {Array<object>}
+ */
+export function getWaypointsWithSyntheticCamps(route, opts) {
+  if (!route) return [];
+  const waypoints = [...route.waypoints];
+
+  const plan = buildPlan(route, opts);
+  for (const d of plan.dayPlan) {
+    for (const key of ['short', 'medium', 'long']) {
+      const opt = d.options[key];
+      if (opt?.campId?.startsWith('synth-camp-')) {
+        if (waypoints.some((w) => w.id === opt.campId)) continue;
+
+        const pt = getCoordinatesAtMile(route.trackPoints, opt.endMi);
+        if (pt) {
+          waypoints.push({
+            id: opt.campId,
+            name: `${opt.campName} (${key})`,
+            type: 'camping',
+            lat: pt[0],
+            lon: pt[1],
+            distanceFromStartMi: opt.endMi,
+            description: `Wilderness camping option for Day ${d.day}. Target mileage: ${opt.miles.toFixed(1)} mi.`,
+            reliability: 100,
+          });
+        }
+      }
+    }
+  }
+  return waypoints;
 }

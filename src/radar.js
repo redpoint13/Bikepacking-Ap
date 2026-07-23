@@ -8,6 +8,7 @@
  */
 
 import { distanceFromStart, waypointsOfType } from './gpx.js';
+import { speak } from './audio.js';
 
 export class RadarController {
   /**
@@ -193,6 +194,11 @@ export class RadarController {
         if (this.hapticFired[type][threshStr] !== nextWp.id) {
           this._fireHaptic();
           this.hapticFired[type][threshStr] = nextWp.id;
+          
+          if (thresh === 1.0) {
+            const typeLabel = type === 'camp' ? 'camping' : type;
+            speak(`Approaching ${typeLabel} in 1 mile.`);
+          }
         }
       }
       

@@ -203,11 +203,55 @@ export async function fetchOSMWater(bounds) {
  * @param {Map<string, number>} [flowMap] - Real-time flow data (siteId -> cfs)
  * @returns {import('./gpx.js').Waypoint[]}
  */
-export function mergeWaterSources(route, usgsFeatures, osmElements, flowMap = new Map()) {
+export function classifyFlowPercentile(currentFlow, stats = {}) {
+  if (currentFlow == null || !Number.isFinite(currentFlow)) return 'Unknown';
+  if (currentFlow === 0) return 'Much Below Normal (Dry Alert)';
+  const { p10 = 1, p25 = 5, p75 = 50, p90 = 100 } = stats;
+  if (currentFlow < p10) return 'Much Below Normal (Dry Alert)';
+  if (currentFlow < p25) return 'Below Normal';
+  if (currentFlow > p90) return 'Much Above Normal';
+  if (currentFlow > p75) return 'Above Normal';
+  return 'Normal Seasonal Flow';
+}
+
+export async function fetchUSGSPercentileStats(siteIds) {
+  const statsMap = new Map();
+  if (siteIds.length === 0) return statsMap;
+
+  const url = `https://waterservices.usgs.gov/nwis/stat/?format=json&sites=${siteIds.join(',')}&statReportType=daily&statType=p10,p25,p50,p75,p90`;
+
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
+    if (!res.ok) throw new Error(`USGS Stat HTTP ${res.status}`);
+    const data = await res.json();
+    const timeSeries = data.value?.timeSeries ?? [];
+    for (const ts of timeSeries) {
+      const siteId = ts.sourceInfo?.siteCode?.[0]?.value;
+      const values = ts.values?.[0]?.value ?? [];
+      if (siteId && values.length > 0) {
+        const stats = {};
+        for (const v of values) {
+          const val = Number.parseFloat(v.value);
+          const name = (v.qualifiers?.[0] ?? '').toLowerCase();
+          if (name.includes('p10')) stats.p10 = val;
+          if (name.includes('p25')) stats.p25 = val;
+          if (name.includes('p75')) stats.p75 = val;
+          if (name.includes('p90')) stats.p90 = val;
+        }
+        statsMap.set(siteId, stats);
+      }
+    }
+  } catch (err) {
+    console.warn('[BPNav] USGS statistics fetch failed:', err.message);
+  }
+
+  return statsMap;
+}
+
+export function mergeWaterSources(route, usgsFeatures, osmElements, flowMap = new Map(), statsMap = new Map()) {
   const { trackPoints } = route;
   const sampled = sampleTrackPoints(trackPoints);
 
-  // Start from GPX water waypoints -- they are always kept
   const existing = route.waypoints.filter((w) => w.type === 'water');
   const merged = [...existing];
 
@@ -224,14 +268,17 @@ export function mergeWaterSources(route, usgsFeatures, osmElements, flowMap = ne
     const siteId = props.monitoringLocationNumber;
     let reliability = usgsReliability(feature);
     let flowDesc = '';
+    let seasonalStatus = 'Normal Seasonal Flow';
 
     if (siteId && flowMap.has(siteId)) {
       const flow = flowMap.get(siteId);
+      const stats = statsMap.get(siteId) ?? {};
+      seasonalStatus = classifyFlowPercentile(flow, stats);
       if (flow > 0) {
-        reliability = 90; // Highly reliable since it is actively flowing
-        flowDesc = ` (Flowing: ${flow.toFixed(1)} cfs)`;
+        reliability = seasonalStatus.includes('Below') ? 70 : 90;
+        flowDesc = ` (${seasonalStatus} — ${flow.toFixed(1)} cfs)`;
       } else {
-        reliability = 0; // Dry
+        reliability = 0;
         flowDesc = ' (Station reports DRY / no flow)';
       }
     }
@@ -245,6 +292,7 @@ export function mergeWaterSources(route, usgsFeatures, osmElements, flowMap = ne
       type: 'water',
       source: 'usgs',
       reliability,
+      seasonalStatus,
       distanceFromStartMi: distanceFromStart(lat, lon, trackPoints),
     });
   }
@@ -274,13 +322,6 @@ export function mergeWaterSources(route, usgsFeatures, osmElements, flowMap = ne
   return merged.sort((a, b) => a.distanceFromStartMi - b.distanceFromStartMi);
 }
 
-/**
- * Fetches real-time streamflow data (parameter 00060) for a list of USGS site IDs.
- * Returns a Map of siteId -> flowRateCfs.
- *
- * @param {string[]} siteIds
- * @returns {Promise<Map<string, number>>}
- */
 export async function fetchUSGSFlowData(siteIds) {
   const flowMap = new Map();
   if (siteIds.length === 0) return flowMap;
@@ -313,18 +354,6 @@ export async function fetchUSGSFlowData(siteIds) {
   return flowMap;
 }
 
-// ---------------------------------------------------------------------------
-// Top-level enrichment entry point
-// ---------------------------------------------------------------------------
-
-/**
- * Fetches USGS and OSM water data in parallel, queries real-time streamflow
- * for active USGS stations, merges them with GPX waypoints, and returns
- * the enriched water waypoint list.
- *
- * @param {import('./gpx.js').RouteContext} route
- * @returns {Promise<import('./gpx.js').Waypoint[]>}
- */
 export async function enrichWaterSources(route) {
   const [usgsFeatures, osmElements] = await Promise.all([
     fetchUSGSLocations(route.bounds),
@@ -335,7 +364,11 @@ export async function enrichWaterSources(route) {
     .map((f) => f.properties?.monitoringLocationNumber)
     .filter((id) => typeof id === 'string' && id.length > 0);
 
-  const flowMap = await fetchUSGSFlowData(siteIds);
+  const [flowMap, statsMap] = await Promise.all([
+    fetchUSGSFlowData(siteIds),
+    fetchUSGSPercentileStats(siteIds),
+  ]);
 
-  return mergeWaterSources(route, usgsFeatures, osmElements, flowMap);
+  return mergeWaterSources(route, usgsFeatures, osmElements, flowMap, statsMap);
 }
+

@@ -512,6 +512,10 @@ const dayLabelsMap = new WeakMap();
  */
 export function updateMapDayPlan(map, trackPoints, dayPlan) {
   if (!map) return;
+  if (!map.isStyleLoaded()) {
+    map.once('style.load', () => updateMapDayPlan(map, trackPoints, dayPlan));
+    return;
+  }
 
   // --- 1. Update Day Route Line Segments ---
   const style = map.getStyle();
@@ -566,6 +570,9 @@ export function updateMapDayPlan(map, trackPoints, dayPlan) {
         },
       });
 
+      const beforeGlow = map.getLayer('route-glow') ? 'route-glow' : undefined;
+      const beforeLine = map.getLayer('route-line') ? 'route-line' : undefined;
+
       map.addLayer(
         {
           id: glowLayerId,
@@ -579,7 +586,7 @@ export function updateMapDayPlan(map, trackPoints, dayPlan) {
             'line-blur': 4,
           },
         },
-        'route-glow',
+        beforeGlow,
       );
 
       map.addLayer(
@@ -594,7 +601,7 @@ export function updateMapDayPlan(map, trackPoints, dayPlan) {
             'line-opacity': 0.9,
           },
         },
-        'route-line',
+        beforeLine,
       );
     });
   }
@@ -685,3 +692,70 @@ export function updateMapDayPlan(map, trackPoints, dayPlan) {
 
   dayLabelsMap.set(map, labelMarkers);
 }
+
+/**
+ * Highlights a track segment on the map between startMi and endMi.
+ *
+ * @param {maplibregl.Map | null} map
+ * @param {Array<[number, number, number]>} trackPoints
+ * @param {number} startMi
+ * @param {number} endMi
+ */
+export function highlightMapSegment(map, trackPoints, startMi, endMi) {
+  if (!map || !trackPoints) return;
+  const segmentPoints = getTrackSegmentForMiles(trackPoints, startMi, endMi);
+  if (segmentPoints.length < 2) return;
+
+  const coordinates = segmentPoints.map(([lat, lon]) => [lon, lat]);
+
+  const sourceId = 'route-segment-highlight';
+  const lineLayerId = 'route-line-segment-highlight';
+  const glowLayerId = 'route-glow-segment-highlight';
+
+  if (map.getSource(sourceId)) {
+    map.getSource(sourceId).setData({
+      type: 'Feature',
+      geometry: { type: 'LineString', coordinates },
+      properties: {},
+    });
+  } else {
+    map.addSource(sourceId, {
+      type: 'geojson',
+      data: {
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates },
+        properties: {},
+      },
+    });
+
+    map.addLayer({
+      id: glowLayerId,
+      type: 'line',
+      source: sourceId,
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: {
+        'line-color': '#ffd54f',
+        'line-width': 10,
+        'line-opacity': 0.6,
+      },
+    });
+
+    map.addLayer({
+      id: lineLayerId,
+      type: 'line',
+      source: sourceId,
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: {
+        'line-color': '#ffb300',
+        'line-width': 5,
+        'line-opacity': 0.9,
+      },
+    });
+  }
+
+  // Fit bounds to segment
+  const bounds = new maplibregl.LngLatBounds();
+  coordinates.forEach((c) => bounds.extend(c));
+  map.fitBounds(bounds, { padding: 40, maxZoom: 14 });
+}
+

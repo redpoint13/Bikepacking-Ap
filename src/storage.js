@@ -87,6 +87,42 @@ export async function clearRoute() {
 }
 
 // ---------------------------------------------------------------------------
+// Route Metadata cache
+// ---------------------------------------------------------------------------
+
+const METADATA_KEY = 'current-metadata';
+
+export async function saveRouteMetadata(metadata) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).put({ metadata, savedAt: Date.now() }, METADATA_KEY);
+    tx.oncomplete = () => resolve();
+    tx.onerror = (e) => reject(e.target.error);
+  });
+}
+
+export async function loadRouteMetadata() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const req = tx.objectStore(STORE_NAME).get(METADATA_KEY);
+    req.onsuccess = (e) => resolve(e.target.result?.metadata ?? null);
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+export async function clearRouteMetadata() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).delete(METADATA_KEY);
+    tx.oncomplete = () => resolve();
+    tx.onerror = (e) => reject(e.target.error);
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Enrichment cache -- offline fallback for OSM / USGS waypoints
 // ---------------------------------------------------------------------------
 

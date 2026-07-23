@@ -85,10 +85,56 @@ export async function fetchOSMCampSites(bounds) {
   }
 }
 
+export function classifyLandManager(tags = {}, agencyCode = '') {
+  const code = (agencyCode || '').toUpperCase();
+  const op = `${tags.operator ?? ''} ${tags.name ?? ''} ${tags.description ?? ''}`.toLowerCase();
+
+  if (code.includes('BLM') || op.includes('blm') || op.includes('bureau of land management')) {
+    return { landManager: 'BLM', isDispersedLegal: true };
+  }
+  if (code.includes('USFS') || op.includes('usfs') || op.includes('forest service') || op.includes('national forest')) {
+    return { landManager: 'USFS', isDispersedLegal: true };
+  }
+  if (code.includes('NPS') || op.includes('nps') || op.includes('national park')) {
+    return { landManager: 'NPS', isDispersedLegal: false };
+  }
+  if (code.includes('STATE') || op.includes('state park') || op.includes('state forest')) {
+    return { landManager: 'State Land', isDispersedLegal: false };
+  }
+  if (code.includes('PVT') || op.includes('private')) {
+    return { landManager: 'Private', isDispersedLegal: false };
+  }
+
+  return { landManager: 'Public Land', isDispersedLegal: true };
+}
+
+export async function fetchLandOwnership(lat, lon) {
+  const url = `https://gis.blm.gov/arcgis/rest/services/lands/BLM_Natl_SMA_Cached/MapServer/0/query?geometry=${lon},${lat}&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=ADMIN_AGENCY_CODE,HOLDING_NAME,ADMIN_UNIT_NAME&f=json`;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
+    if (!res.ok) throw new Error(`BLM REST HTTP ${res.status}`);
+    const data = await res.json();
+    const attrs = data.features?.[0]?.attributes ?? {};
+    const agencyCode = attrs.ADMIN_AGENCY_CODE || attrs.HOLDING_NAME || '';
+    return classifyLandManager({}, agencyCode);
+  } catch (_err) {
+    return classifyLandManager({}, '');
+  }
+}
+
 export function mergeCampSources(route, osmElements) {
   const { trackPoints } = route;
   const sampled = sampleTrackPoints(trackPoints);
-  const existing = route.waypoints.filter((w) => w.type === 'camping');
+  const existing = route.waypoints
+    .filter((w) => w.type === 'camping')
+    .map((w) => {
+      const { landManager, isDispersedLegal } = classifyLandManager({ name: w.name, description: w.description });
+      return {
+        ...w,
+        landManager: w.landManager || landManager,
+        isDispersedLegal: w.isDispersedLegal ?? isDispersedLegal,
+      };
+    });
   const merged = [...existing];
 
   for (const el of osmElements) {
@@ -102,6 +148,7 @@ export function mergeCampSources(route, osmElements) {
     if (merged.some((w) => haversineDistance(lat, lon, w.lat, w.lon) < DEDUP_THRESHOLD_MI)) {
       continue;
     }
+    const { landManager, isDispersedLegal } = classifyLandManager(tags);
     merged.push({
       id: `osm-camp-${el.id}`,
       lat,
@@ -113,6 +160,8 @@ export function mergeCampSources(route, osmElements) {
       tier,
       reliability: osmCampReliability(tags),
       distanceFromStartMi: distanceFromStart(lat, lon, trackPoints),
+      landManager,
+      isDispersedLegal,
     });
   }
 
@@ -121,5 +170,7 @@ export function mergeCampSources(route, osmElements) {
 
 export async function enrichCampSources(route) {
   const osmElements = await fetchOSMCampSites(route.bounds);
-  return mergeCampSources(route, osmElements);
+  const merged = mergeCampSources(route, osmElements);
+  return merged;
 }
+

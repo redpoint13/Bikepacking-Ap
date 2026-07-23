@@ -202,4 +202,36 @@ describe('Water Optimizer and Manual Overrides', () => {
       [60, 100],
     ]);
   });
+
+  it('handles userStopStates manual overrides (planned & skipped)', () => {
+    const route = makeRoute();
+    const plan = buildPlan(route, {
+      userStopStates: {
+        'wpt-0': 'skipped', // Spring A skipped
+        'wpt-1': 'planned', // Trough B planned
+      },
+    });
+
+    const waterStretches = plan.waterCarry;
+    expect(waterStretches.some((s) => s.toMi === 10 || s.fromMi === 10)).toBe(false);
+    expect(waterStretches.some((s) => s.toMi === 18 || s.fromMi === 18)).toBe(true);
+  });
+
+  it('supports 4-tier resupply food carry calculations', () => {
+    const route = makeRoute();
+    // Add restaurant resupply at mile 60
+    route.waypoints[6].resupplyCategory = 'restaurant';
+
+    const spans = computeFoodCarry(route, {
+      targetDailyMiles: 45,
+      caloriesPerDay: 4000,
+      campMealsPerDay: 1,
+      caloriesPerCampMeal: 800,
+      avgSnackCalories: 250,
+    });
+
+    const restaurantSpan = spans.find((s) => s.toMi === 60);
+    expect(restaurantSpan.toCategory).toBe('restaurant');
+    expect(restaurantSpan.toCategoryLabel).toBe('Restaurant / Diner');
+  });
 });
