@@ -5,6 +5,8 @@
  * CSS is imported only in main.js so this module stays test-friendly.
  */
 
+import { searchOSMResources } from './api.js';
+import { generateStatusReport, isVoiceEnabled, setVoiceEnabled, speak } from './audio.js';
 import { enrichCampSources } from './camp.js';
 import { GPSManager } from './gps.js';
 import {
@@ -25,15 +27,24 @@ import {
 import { importFromURL } from './import.js';
 import {
   destroyMap,
+  highlightMapSegment,
   initMap,
   updateMapDayPlan,
   updateMapWaypoints,
   updateMileMarkers,
   updateUserLocationMarker,
 } from './map.js';
-import { PLAN_DEFAULTS, buildPlan, optimizeWaterStops } from './plan.js';
+import {
+  PLAN_DEFAULTS,
+  buildPlan,
+  getActiveStopIds,
+  getWaypointsWithSyntheticCamps,
+  optimizeWaterStops,
+} from './plan.js';
 import { renderOSMSearchResults, renderPlanningView, updatePlanningView } from './planning.js';
+import { RadarController } from './radar.js';
 import { enrichResupplySources } from './resupply.js';
+import { appState, getPlanDefaults, persistUserPreferences } from './state.js';
 import {
   clearEnrichment,
   clearPlanOptions,
@@ -45,9 +56,20 @@ import {
   savePlanOptions,
   saveRoute,
 } from './storage.js';
+import { getAllRoutes, getRouteById, saveRouteToLibrary, setActiveRouteId } from './storage.js';
 import { calculateDaylightBuffer } from './sun.js';
+import { syncOfflineMap } from './sync.js';
+import { highlightProfileSegment } from './ui/elevationProfile.js';
+import { renderElevationProfile } from './ui/elevationProfile.js';
+import { updateResourceCards as updateResourceCardsUI } from './ui/radarCards.js';
+import { openRouteLibraryModal } from './ui/routeLibraryModal.js';
+import {
+  getCurrentEtaDate,
+  getSunsprintTargetMile,
+  setSunsprintTargetMile,
+} from './ui/sunsprint.js';
+import { openWaypointEditorModal } from './ui/waypointEditorModal.js';
 import { enrichWaterSources } from './water.js';
-import { RadarController } from './radar.js';
 
 // ---------------------------------------------------------------------------
 // Module state
@@ -74,36 +96,42 @@ let lastCurrentMile = 0;
 /** @type {number} */
 let lastPaceMph = 15;
 
+/** @type {boolean} */
+let _isGhostMode = false;
+
+/** @type {WakeLockSentinel | null} */
+let wakeLock = null;
+
+/** @type {number} */
+let lastSpokenMile = -1;
+
+/** @type {Date | null} */
+let currentEtaDate = null;
+
+/** @type {object | null} */
+let currentNextResource = null;
+
 /** @type {Array<object>} Current active search results. */
 let lastSearchResults = [];
-
-async function searchOSMResources(bounds, keyword) {
-  const { minLon, minLat, maxLon, maxLat } = bounds;
-  const bbox = `${minLat},${minLon},${maxLat},${maxLon}`;
-  const escapedKeyword = keyword.replace(/["\\]/g, '');
-
-  const query = `
-    [out:json][timeout:25];
-    (
-      node["name"~"${escapedKeyword}",i](${bbox});
-      way["name"~"${escapedKeyword}",i](${bbox});
-      node["tourism"~"${escapedKeyword}",i](${bbox});
-      node["amenity"~"${escapedKeyword}",i](${bbox});
-      node["shop"~"${escapedKeyword}",i](${bbox});
-      node["natural"~"${escapedKeyword}",i](${bbox});
-    );
-    out center;
-  `;
-
-  const data = await fetchOverpass(query);
-  return data.elements ?? [];
-}
 
 /**
  * Synchronises all visual map elements (markers, highlighted stops,
  * day segment tracks, and day boundary labels) with currentRoute and planOptions.
  */
-function syncMapState() {
+let syncMapTimeout = null;
+function syncMapState(immediate = false) {
+  if (!currentMap || !currentRoute) return;
+  if (!immediate) {
+    if (syncMapTimeout) clearTimeout(syncMapTimeout);
+    syncMapTimeout = setTimeout(() => {
+      _executeSyncMapState();
+    }, 40);
+    return;
+  }
+  _executeSyncMapState();
+}
+
+function _executeSyncMapState() {
   if (!currentMap || !currentRoute) return;
   const activeStopIds = getActiveStopIds(currentRoute, planOptions);
   const wpts = getWaypointsWithSyntheticCamps(currentRoute, planOptions);
@@ -118,52 +146,6 @@ let currentMode = 'planning';
 
 /** @type {GPSManager | null} */
 let gpsManager = null;
-
-function getPlanDefaults() {
-  const defaults = { ...PLAN_DEFAULTS };
-
-  const targetDailyMiles = localStorage.getItem('bpnav-targetDailyMiles');
-  if (targetDailyMiles !== null) defaults.targetDailyMiles = Number(targetDailyMiles);
-
-  const waterCapacityOz = localStorage.getItem('bpnav-waterCapacityOz');
-  if (waterCapacityOz !== null) defaults.waterCapacityOz = Number(waterCapacityOz);
-
-  const ozPerMile = localStorage.getItem('bpnav-ozPerMile');
-  if (ozPerMile !== null) defaults.ozPerMile = Number(ozPerMile);
-
-  const reliableWaterThreshold = localStorage.getItem('bpnav-reliableWaterThreshold');
-  if (reliableWaterThreshold !== null)
-    defaults.reliableWaterThreshold = Number(reliableWaterThreshold);
-
-  const caloriesPerDay = localStorage.getItem('bpnav-caloriesPerDay');
-  if (caloriesPerDay !== null) defaults.caloriesPerDay = Number(caloriesPerDay);
-
-  const campMealsPerDay = localStorage.getItem('bpnav-campMealsPerDay');
-  if (campMealsPerDay !== null) defaults.campMealsPerDay = Number(campMealsPerDay);
-
-  const caloriesPerCampMeal = localStorage.getItem('bpnav-caloriesPerCampMeal');
-  if (caloriesPerCampMeal !== null) defaults.caloriesPerCampMeal = Number(caloriesPerCampMeal);
-
-  const avgSnackCalories = localStorage.getItem('bpnav-avgSnackCalories');
-  if (avgSnackCalories !== null) defaults.avgSnackCalories = Number(avgSnackCalories);
-
-  const maxDetourMi = localStorage.getItem('bpnav-maxDetourMi');
-  if (maxDetourMi !== null) defaults.maxDetourMi = Number(maxDetourMi);
-
-  return defaults;
-}
-
-function persistUserPreferences(options) {
-  localStorage.setItem('bpnav-targetDailyMiles', options.targetDailyMiles);
-  localStorage.setItem('bpnav-waterCapacityOz', options.waterCapacityOz);
-  localStorage.setItem('bpnav-ozPerMile', options.ozPerMile);
-  localStorage.setItem('bpnav-reliableWaterThreshold', options.reliableWaterThreshold);
-  localStorage.setItem('bpnav-caloriesPerDay', options.caloriesPerDay);
-  localStorage.setItem('bpnav-campMealsPerDay', options.campMealsPerDay);
-  localStorage.setItem('bpnav-caloriesPerCampMeal', options.caloriesPerCampMeal);
-  localStorage.setItem('bpnav-avgSnackCalories', options.avgSnackCalories);
-  localStorage.setItem('bpnav-maxDetourMi', options.maxDetourMi);
-}
 
 /**
  * Updates the route stats bar on top of the map section based on the current plan options.
@@ -205,208 +187,6 @@ function updateRouteStats(container, route, options) {
 
 /** @type {typeof PLAN_DEFAULTS} */
 let planOptions = getPlanDefaults();
-
-/**
- * Computes the set of waypoint IDs that are currently active stops (water, resupply, camp).
- * @param {import('./gpx.js').RouteContext} route
- * @param {typeof PLAN_DEFAULTS} opts
- * @returns {Set<string>}
- */
-function getActiveStopIds(route, opts) {
-  const activeIds = new Set();
-  if (!route) return activeIds;
-
-  const total = route.totalDistanceMiles ?? 0;
-  const waypoints = [...route.waypoints].sort(
-    (a, b) => a.distanceFromStartMi - b.distanceFromStartMi,
-  );
-
-  const excludedWater = new Set(opts.excludedWaterIds);
-  const forcedWater = new Set(opts.forcedWaterIds);
-  const excludedResupply = new Set(opts.excludedResupplyIds);
-  const forcedResupply = new Set(opts.forcedResupplyIds);
-
-  // Filter water candidates
-  const waterWpts = waypoints.filter((w) => w.type === 'water');
-  const waterCandidates = waterWpts.filter((wp) => {
-    if (excludedWater.has(wp.id)) return false;
-    const isOffTrack = (wp.offCourseDistanceMi || 0) > 0.1;
-    if (isOffTrack && !forcedWater.has(wp.id)) return false;
-    return (wp.reliability ?? 0) >= opts.reliableWaterThreshold || forcedWater.has(wp.id);
-  });
-
-  // Filter resupply candidates
-  const resupplyWpts = waypoints.filter((w) => w.type === 'resupply');
-  const activeResupplies = resupplyWpts.filter((w) => {
-    if (excludedResupply.has(w.id)) return false;
-    const isOffTrack = (w.offCourseDistanceMi || 0) > 0.1;
-    if (isOffTrack && !forcedResupply.has(w.id)) return false;
-    return true;
-  });
-
-  const waterStops = opts.optimizeWaterStops
-    ? optimizeWaterStops(route, [...waterCandidates, ...activeResupplies], opts)
-    : waterCandidates;
-
-  // Filter water stops by detour
-  const filteredWaterStops = waterStops.filter((wp) => {
-    const isForced = wp.type === 'water' ? forcedWater.has(wp.id) : forcedResupply.has(wp.id);
-    return (wp.offCourseDistanceMi || 0) <= opts.maxDetourMi || isForced;
-  });
-
-  // Resolve water emergencies
-  const findEmergencyStretch = (activeStops) => {
-    const anchors = [0, ...activeStops.map((s) => s.distanceFromStartMi), total];
-    for (let i = 1; i < anchors.length; i++) {
-      const dist = anchors[i] - anchors[i - 1];
-      if (dist * opts.ozPerMile > opts.waterCapacityOz) {
-        return { start: anchors[i - 1], end: anchors[i] };
-      }
-    }
-    return null;
-  };
-
-  let emergency = findEmergencyStretch(filteredWaterStops);
-  const guard = 100;
-  let iterations = 0;
-
-  while (emergency && iterations < guard) {
-    const potentialHelpers = waypoints.filter((w) => {
-      if (w.type !== 'water' && w.type !== 'resupply') return false;
-      if (w.type === 'water' && excludedWater.has(w.id)) return false;
-      if (w.type === 'resupply' && excludedResupply.has(w.id)) return false;
-
-      const mi = w.distanceFromStartMi;
-      const offCourse = w.offCourseDistanceMi || 0;
-      const isValidHelper = offCourse <= opts.maxDetourMi;
-
-      const isAlreadyActive = filteredWaterStops.some((s) => s.id === w.id);
-
-      return (
-        isValidHelper && !isAlreadyActive && mi > emergency.start + 0.1 && mi < emergency.end - 0.1
-      );
-    });
-
-    if (potentialHelpers.length === 0) {
-      break;
-    }
-
-    const mid = (emergency.start + emergency.end) / 2;
-    potentialHelpers.sort(
-      (a, b) => Math.abs(a.distanceFromStartMi - mid) - Math.abs(b.distanceFromStartMi - mid),
-    );
-
-    filteredWaterStops.push(potentialHelpers[0]);
-    filteredWaterStops.sort((a, b) => a.distanceFromStartMi - b.distanceFromStartMi);
-
-    emergency = findEmergencyStretch(filteredWaterStops);
-    iterations++;
-  }
-
-  for (const wp of filteredWaterStops) {
-    activeIds.add(wp.id);
-  }
-
-  // Food resupplies
-  const activeResupplyStops = activeResupplies;
-
-  // Resolve food emergencies
-  const maxFoodCarryMiles = opts.targetDailyMiles * 3;
-  const findFoodEmergency = (activeStops) => {
-    const milesList = [0, ...activeStops.map((s) => s.distanceFromStartMi), total];
-    for (let i = 1; i < milesList.length; i++) {
-      const dist = milesList[i] - milesList[i - 1];
-      if (dist > maxFoodCarryMiles) {
-        return { start: milesList[i - 1], end: milesList[i] };
-      }
-    }
-    return null;
-  };
-
-  let foodEmergency = findFoodEmergency(activeResupplyStops);
-  let foodIterations = 0;
-
-  while (foodEmergency && foodIterations < guard) {
-    const potentialHelpers = resupplyWpts.filter((w) => {
-      if (excludedResupply.has(w.id)) return false;
-      const mi = w.distanceFromStartMi;
-      const isWithinDetour = (w.offCourseDistanceMi || 0) <= opts.maxDetourMi;
-      const isAlreadyActive = activeResupplyStops.some((s) => s.id === w.id);
-
-      return (
-        isWithinDetour &&
-        !isAlreadyActive &&
-        mi > foodEmergency.start + 1.0 &&
-        mi < foodEmergency.end - 1.0
-      );
-    });
-
-    if (potentialHelpers.length === 0) {
-      break;
-    }
-
-    const mid = (foodEmergency.start + foodEmergency.end) / 2;
-    potentialHelpers.sort(
-      (a, b) => Math.abs(a.distanceFromStartMi - mid) - Math.abs(b.distanceFromStartMi - mid),
-    );
-
-    activeResupplyStops.push(potentialHelpers[0]);
-    activeResupplyStops.sort((a, b) => a.distanceFromStartMi - b.distanceFromStartMi);
-
-    foodEmergency = findFoodEmergency(activeResupplyStops);
-    foodIterations++;
-  }
-
-  for (const wp of activeResupplyStops) {
-    activeIds.add(wp.id);
-  }
-
-  // 3. Camp stops (all camps chosen in day plan)
-  const plan = buildPlan(route, opts);
-  for (const d of plan.dayPlan) {
-    if (d.chosen?.campId) {
-      activeIds.add(d.chosen.campId);
-    }
-  }
-
-  return activeIds;
-}
-
-/**
- * Returns waypoints with synthetic camp options included so they can be drawn on the map.
- * @param {import('./gpx.js').RouteContext} route
- * @param {typeof PLAN_DEFAULTS} opts
- * @returns {Array<object>}
- */
-function getWaypointsWithSyntheticCamps(route, opts) {
-  if (!route) return [];
-  const waypoints = [...route.waypoints];
-
-  const plan = buildPlan(route, opts);
-  for (const d of plan.dayPlan) {
-    for (const key of ['short', 'medium', 'long']) {
-      const opt = d.options[key];
-      if (opt?.campId?.startsWith('synth-camp-')) {
-        if (waypoints.some((w) => w.id === opt.campId)) continue;
-
-        const pt = getCoordinatesAtMile(route.trackPoints, opt.endMi);
-        if (pt) {
-          waypoints.push({
-            id: opt.campId,
-            name: `${opt.campName} (${key})`,
-            type: 'camping',
-            lat: pt[0],
-            lon: pt[1],
-            distanceFromStartMi: opt.endMi,
-            description: `Wilderness camping option for Day ${d.day}. Target mileage: ${opt.miles.toFixed(1)} mi.`,
-            reliability: 100,
-          });
-        }
-      }
-    }
-  }
-  return waypoints;
-}
 
 /**
  * Handles selecting a specific camp option (short, medium, long) for a day.
@@ -580,6 +360,8 @@ export function renderApp(container) {
         <div class="header-chips">
           <span class="offline-chip" hidden aria-hidden="true" aria-live="polite"
             role="status">Offline</span>
+          <button class="sync-map-btn" id="sync-map-btn" type="button" hidden>Sync Map</button>
+          <button class="header-change-route-btn" id="header-change-route-btn" type="button" hidden>Change Route</button>
           <span class="status-chip status-chip--idle" aria-label="Status: no route loaded">
             No Route
           </span>
@@ -658,6 +440,20 @@ export function renderApp(container) {
               <p class="daylight-bar__empty" id="sunsprint-empty">Load a route to see your daylight buffer</p>
               <p class="daylight-bar__buffer-text" id="sunsprint-buffer-text" hidden></p>
             </div>
+            
+            <div class="trail-talk-controls" id="trail-talk-controls">
+              <label class="voice-toggle-label">
+                <input type="checkbox" id="voice-enable-toggle" />
+                Enable Trail-Talk 🔊
+              </label>
+              <button id="read-status-btn" class="read-status-btn" type="button">
+                Read Status
+              </button>
+            </div>
+
+            <button id="ghost-mode-enter-btn" class="ghost-mode-enter-btn" type="button" hidden>
+              Enter Ghost Mode 👻
+            </button>
           </div>
         </section>
       </div>
@@ -665,13 +461,17 @@ export function renderApp(container) {
       <!-- Map section — hidden until a route is loaded -->
       <section class="map-section" id="map-section" aria-label="Route map" hidden style="position: relative;">
         <div id="map" class="map-container"></div>
-        <div class="map-overlay-controls" style="position: absolute; bottom: 8px; left: 8px; z-index: 10; background: var(--md-sys-color-surface-container, #ffffff); padding: 8px 12px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.3); display: flex; flex-direction: column; gap: 6px; font-size: 11px; font-weight: 600; color: var(--md-sys-color-on-surface, #000000); border: 1px solid var(--md-sys-color-outline-variant);">
+        <div class="map-overlay-controls" style="position: absolute; top: 12px; left: 12px; z-index: 10; background: var(--md-sys-color-surface-container, #ffffff); padding: 8px 12px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.3); display: flex; flex-direction: column; gap: 6px; font-size: 11px; font-weight: 600; color: var(--md-sys-color-on-surface, #000000); border: 1px solid var(--md-sys-color-outline-variant);">
           <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; margin: 0;">
             <input type="checkbox" id="map-toggle-miles" checked />
             Mile Markers
           </label>
+          <button type="button" id="btn-add-custom-poi" class="btn-add-poi-floating" style="margin-top: 2px;">
+            ＋ Add Waypoint
+          </button>
         </div>
         <div class="route-stats" id="route-stats" aria-label="Route summary"></div>
+        <div id="elevation-profile-container" style="width: 100%;"></div>
 
         <!-- Smart Resource Radar Bottom Sheet -->
         <div id="radar-bottom-sheet" class="radar-bottom-sheet collapsed" style="display: none;" aria-label="Live Resource Radar">
@@ -727,6 +527,22 @@ export function renderApp(container) {
 
     </main>
 
+    <!-- Ghost Mode Overlay -->
+    <div id="ghost-mode-overlay" class="ghost-mode-overlay" hidden>
+      <div class="ghost-mode-content">
+        <h2 class="ghost-mode-title">Ghost Mode Active</h2>
+        <div class="ghost-mode-eta">
+          ETA: <span id="ghost-mode-eta-val">--:--</span>
+        </div>
+        <button id="ghost-read-status-btn" class="ghost-read-status-btn" type="button">
+          🔊 Read Status
+        </button>
+        <button id="ghost-mode-wake-btn" class="ghost-mode-wake-btn" type="button">
+          WAKE UP
+        </button>
+      </div>
+    </div>
+
     <!-- Hidden file input — triggered by the FAB -->
     <input type="file" id="gpx-file-input" accept=".gpx,.kml,.json" hidden aria-hidden="true" />
 
@@ -744,6 +560,18 @@ export function renderApp(container) {
         </div>
         <p class="url-import-error" id="url-import-error" role="alert" hidden></p>
       </form>
+    </div>
+
+    <!-- Sync Progress Modal -->
+    <div id="sync-progress-modal" class="sync-modal" hidden>
+      <div class="sync-modal-content">
+        <h2 class="sync-modal-title">Syncing Map Tiles</h2>
+        <p class="sync-modal-desc">Downloading vector map tiles for offline use...</p>
+        <div class="sync-progress-bar">
+          <div id="sync-progress-fill" class="sync-progress-fill" style="width: 0%;"></div>
+        </div>
+        <p id="sync-progress-text" class="sync-progress-text">0 / 0 tiles</p>
+      </div>
     </div>
 
     <!-- Floating Action Button -->
@@ -809,14 +637,144 @@ export function wireOfflineIndicator(container) {
 // ---------------------------------------------------------------------------
 
 function wireEvents(container) {
-  const fab = container.querySelector('#load-route-btn');
+  const _fab = container.querySelector('#load-route-btn');
   const fileInput = container.querySelector('#gpx-file-input');
   const importPlanBtn = container.querySelector('#import-plan-btn');
+  const syncMapBtn = container.querySelector('#sync-map-btn');
 
-  // FAB -> trigger file picker
-  fab.addEventListener('click', () => {
-    fileInput.accept = '.gpx,.kml,.json';
-    fileInput.click();
+  // Sync Map button
+  if (syncMapBtn) {
+    syncMapBtn.addEventListener('click', async () => {
+      const modal = container.querySelector('#sync-progress-modal');
+      const text = container.querySelector('#sync-progress-text');
+      const fill = container.querySelector('#sync-progress-fill');
+
+      if (!currentRoute) return;
+
+      modal.hidden = false;
+      syncMapBtn.disabled = true;
+
+      await syncOfflineMap(currentRoute, (current, total) => {
+        const pct = (current / total) * 100;
+        fill.style.width = `${pct}%`;
+        text.textContent = `${current} / ${total} tiles downloaded`;
+      });
+
+      setTimeout(() => {
+        modal.hidden = true;
+        syncMapBtn.disabled = false;
+        syncMapBtn.textContent = 'Map Synced ✓';
+      }, 1000);
+    });
+  }
+
+  // Route Library Helper
+  function openLibrary() {
+    openRouteLibraryModal({
+      onSelectRoute: async (routeId) => {
+        const record = await getRouteById(routeId);
+        if (!record) return;
+        await setActiveRouteId(routeId);
+        if (record.options) {
+          planOptions = { ...getPlanDefaults(), ...record.options };
+          persistUserPreferences(planOptions);
+        } else {
+          planOptions = getPlanDefaults();
+        }
+        const route = parseGPX(record.gpxText);
+        if (record.waypoints?.length) {
+          route.waypoints = sanitizeWaypoints(record.waypoints);
+        }
+        applyRoute(container, route, true);
+        kickoffWaterEnrichment(container, route);
+        kickoffCampEnrichment(container, route);
+        kickoffResupplyEnrichment(container, route);
+      },
+      onUploadGPX: async (file) => {
+        setLoadingState(container, true);
+        try {
+          const text = await file.text();
+          if (file.name.endsWith('.json')) {
+            const bundle = JSON.parse(text);
+            if (bundle.version && bundle.gpxText) {
+              const route = parseGPX(bundle.gpxText);
+              if (bundle.waypoints) route.waypoints = sanitizeWaypoints(bundle.waypoints);
+              const routeId = await saveRouteToLibrary({
+                name:
+                  bundle.name ||
+                  (bundle.filename
+                    ? bundle.filename.replace(/\.gpx$/i, '')
+                    : file.name.replace(/\.json$/i, '')),
+                filename: bundle.filename || file.name,
+                gpxText: bundle.gpxText,
+                totalDistanceMiles: route.totalDistanceMiles,
+                waypoints: route.waypoints,
+                options: bundle.options || null,
+              });
+              await setActiveRouteId(routeId);
+              if (bundle.options) {
+                planOptions = { ...getPlanDefaults(), ...bundle.options };
+                persistUserPreferences(planOptions);
+              }
+              applyRoute(container, route, true);
+              return;
+            }
+          }
+          const route = parseGPX(text);
+          const routeId = await saveRouteToLibrary({
+            name: file.name.replace(/\.gpx$/i, ''),
+            filename: file.name,
+            gpxText: text,
+            totalDistanceMiles: route.totalDistanceMiles,
+            waypoints: route.waypoints || [],
+          });
+          await setActiveRouteId(routeId);
+          applyRoute(container, route);
+          kickoffWaterEnrichment(container, route);
+          kickoffCampEnrichment(container, route);
+          kickoffResupplyEnrichment(container, route);
+        } catch (err) {
+          showError(container, err.message);
+        } finally {
+          setLoadingState(container, false);
+        }
+      },
+      onImportURL: async (url) => {
+        setLoadingState(container, true);
+        try {
+          const route = await importFromURL(url);
+          const gpxStub = `<gpx version="1.1" creator="BPNav"><trk><name>${route.name}</name><trkseg>${route.trackPoints.map(([lat, lon]) => `<trkpt lat="${lat}" lon="${lon}"/>`).join('')}</trkseg></trk></gpx>`;
+          const routeId = await saveRouteToLibrary({
+            name: route.name,
+            filename: `${route.name.replace(/\s+/g, '_')}.gpx`,
+            gpxText: gpxStub,
+            totalDistanceMiles: route.totalDistanceMiles,
+            waypoints: route.waypoints || [],
+          });
+          await setActiveRouteId(routeId);
+          applyRoute(container, route);
+          kickoffWaterEnrichment(container, route);
+          kickoffCampEnrichment(container, route);
+          kickoffResupplyEnrichment(container, route);
+        } catch (err) {
+          showError(container, err.message);
+          throw err;
+        } finally {
+          setLoadingState(container, false);
+        }
+      },
+    });
+  }
+
+  // Delegated click handler for opening Route Library from any trigger (header, fab, planning toolbar)
+  container.addEventListener('click', (e) => {
+    const trigger = e.target.closest(
+      '#load-route-btn, #header-change-route-btn, [data-action="open-library"], [data-action="change-route"]',
+    );
+    if (trigger) {
+      e.preventDefault();
+      openLibrary();
+    }
   });
 
   // Import Plan link -> trigger JSON-specific file picker
@@ -853,7 +811,7 @@ function wireEvents(container) {
           // Restore route and enrichment
           const route = parseGPX(bundle.gpxText);
           if (bundle.waypoints) {
-            route.waypoints = bundle.waypoints;
+            route.waypoints = sanitizeWaypoints(bundle.waypoints);
             await saveEnrichment(route.waypoints).catch(() => {});
           }
 
@@ -993,6 +951,40 @@ function wireEvents(container) {
       targetValEl.textContent = sunsprintTargetMile.toFixed(1);
       if (currentRoute) {
         updateSunsprintDisplay(container, currentRoute, lastCurrentMile, lastPaceMph);
+      }
+    });
+  }
+
+  // Ghost Mode
+  const ghostEnterBtn = container.querySelector('#ghost-mode-enter-btn');
+  const ghostWakeBtn = container.querySelector('#ghost-mode-wake-btn');
+  const ghostOverlay = container.querySelector('#ghost-mode-overlay');
+  const mapSection = container.querySelector('#map-section');
+
+  if (ghostEnterBtn && ghostWakeBtn && ghostOverlay && mapSection) {
+    ghostEnterBtn.addEventListener('click', async () => {
+      _isGhostMode = true;
+      ghostOverlay.hidden = false;
+      mapSection.hidden = true;
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock = await navigator.wakeLock.request('screen');
+        }
+      } catch (err) {
+        console.warn('Wake Lock error:', err);
+      }
+    });
+
+    ghostWakeBtn.addEventListener('click', async () => {
+      _isGhostMode = false;
+      ghostOverlay.hidden = true;
+      mapSection.hidden = false;
+      if (currentMap) {
+        requestAnimationFrame(() => currentMap.resize());
+      }
+      if (wakeLock) {
+        await wakeLock.release().catch(console.warn);
+        wakeLock = null;
       }
     });
   }
@@ -1173,6 +1165,87 @@ function wireEvents(container) {
     btn.style.color = 'var(--md-sys-color-on-surface-variant)';
   });
 
+  function handleSaveCustomWaypoint(wpt) {
+    if (!currentRoute) return;
+    const idx = currentRoute.waypoints.findIndex((w) => w.id === wpt.id);
+    if (idx >= 0) {
+      currentRoute.waypoints[idx] = wpt;
+    } else {
+      currentRoute.waypoints.push(wpt);
+    }
+    currentRoute.waypoints.sort((a, b) => a.distanceFromStartMi - b.distanceFromStartMi);
+
+    updateResourceCards(container, currentRoute);
+    updatePlanningView(container.querySelector('#planning-view'), currentRoute, planOptions);
+    updateRouteStats(container, currentRoute, planOptions);
+    syncMapState();
+    if (currentMap && wpt.lon && wpt.lat) {
+      currentMap.flyTo({ center: [wpt.lon, wpt.lat], zoom: Math.max(currentMap.getZoom(), 12) });
+    }
+    saveEnrichment(currentRoute.waypoints).catch(() => {});
+  }
+
+  function handleDeleteCustomWaypoint(wptId) {
+    if (!currentRoute) return;
+    currentRoute.waypoints = currentRoute.waypoints.filter((w) => w.id !== wptId);
+
+    updateResourceCards(container, currentRoute);
+    updatePlanningView(container.querySelector('#planning-view'), currentRoute, planOptions);
+    updateRouteStats(container, currentRoute, planOptions);
+    syncMapState();
+    if (currentMap && wpt.lon && wpt.lat) {
+      currentMap.flyTo({ center: [wpt.lon, wpt.lat], zoom: Math.max(currentMap.getZoom(), 12) });
+    }
+    saveEnrichment(currentRoute.waypoints).catch(() => {});
+  }
+
+  const addPoiBtn = container.querySelector('#btn-add-custom-poi');
+  if (addPoiBtn) {
+    addPoiBtn.addEventListener('click', () => {
+      if (!currentRoute) return;
+      openWaypointEditorModal({
+        route: currentRoute,
+        defaultMile: 0,
+        defaultCoords: currentRoute.startPoint || { lat: 0, lon: 0 },
+        onSave: handleSaveCustomWaypoint,
+        onDelete: handleDeleteCustomWaypoint,
+      });
+    });
+  }
+
+  window.addEventListener('bpnav-profile-click', (e) => {
+    if (!currentRoute) return;
+    const { mile } = e.detail || {};
+    const pt = getCoordinatesAtMile(currentRoute.trackPoints, mile || 0);
+    openWaypointEditorModal({
+      route: currentRoute,
+      defaultMile: mile || 0,
+      defaultCoords: pt ? { lat: pt[0], lon: pt[1] } : null,
+      onSave: handleSaveCustomWaypoint,
+      onDelete: handleDeleteCustomWaypoint,
+    });
+  });
+
+  container.addEventListener(
+    'click',
+    (e) => {
+      const editBtn = e.target.closest('[data-action="edit-waypoint"]');
+      if (editBtn && currentRoute) {
+        const id = editBtn.getAttribute('data-id');
+        const targetWpt = currentRoute.waypoints.find((w) => w.id === id);
+        if (targetWpt) {
+          openWaypointEditorModal({
+            waypoint: targetWpt,
+            route: currentRoute,
+            onSave: handleSaveCustomWaypoint,
+            onDelete: handleDeleteCustomWaypoint,
+          });
+        }
+      }
+    },
+    { capture: true },
+  );
+
   // Listen for map-toggle-miles changes
   const toggleMilesCheckbox = container.querySelector('#map-toggle-miles');
   toggleMilesCheckbox.addEventListener('change', (e) => {
@@ -1280,6 +1353,19 @@ function applyMode(container) {
  * @param {import('./gpx.js').RouteContext} route
  * @param {boolean} [skipEnrichment=false]
  */
+function sanitizeWaypoints(wpts) {
+  if (!Array.isArray(wpts)) return [];
+  return wpts.filter(
+    (w) =>
+      w &&
+      w.lat != null &&
+      w.lon != null &&
+      !w.id?.startsWith('synth-') &&
+      !w.isSynthetic &&
+      !w.name?.match(/Dispersed Camp \((short|med|long|mi)/i),
+  );
+}
+
 function applyRoute(container, route, skipEnrichment = false) {
   currentRoute = route;
 
@@ -1287,7 +1373,7 @@ function applyRoute(container, route, skipEnrichment = false) {
     gpsManager.stop();
   }
   gpsManager = new GPSManager(route);
-  
+
   if (radarController) {
     radarController.stop();
   }
@@ -1300,6 +1386,21 @@ function applyRoute(container, route, skipEnrichment = false) {
     updateResourceCards(container, route, lastCurrentMile);
     updateSunsprintDisplay(container, route, lastCurrentMile, lastPaceMph);
     updateUserLocationMarker(currentMap, data.lat, data.lon);
+
+    // Trail-Talk: Distance trigger
+    const flooredMile = Math.floor(lastCurrentMile);
+    if (flooredMile > 0 && flooredMile % 5 === 0 && flooredMile > lastSpokenMile) {
+      lastSpokenMile = flooredMile;
+      if (isVoiceEnabled()) {
+        const report = generateStatusReport(
+          lastCurrentMile,
+          sunsprintTargetMile,
+          currentEtaDate,
+          currentNextResource,
+        );
+        speak(report);
+      }
+    }
   });
 
   if (!skipEnrichment) {
@@ -1385,6 +1486,11 @@ function updateStatusChip(container, route) {
   chip.className = 'status-chip status-chip--active';
   chip.textContent = route.name.length > 18 ? `${route.name.slice(0, 16)}…` : route.name;
   chip.setAttribute('aria-label', `Route loaded: ${route.name}`);
+
+  const syncBtn = container.querySelector('#sync-map-btn');
+  if (syncBtn) {
+    syncBtn.hidden = false;
+  }
 }
 
 /**
@@ -1394,65 +1500,7 @@ function updateStatusChip(container, route) {
  * @param {number} [currentMile=0]
  */
 function updateResourceCards(container, route, currentMile = 0) {
-  const waterWpts = waypointsOfType(route, 'water');
-  const resupplyWpts = waypointsOfType(route, 'resupply');
-  const campWpts = waypointsOfType(route, 'camping');
-
-  // Filter next water to only include active stops
-  const activeStopIds = getActiveStopIds(route, planOptions);
-  const nextWater =
-    route.waypoints.find(
-      (w) => w.type === 'water' && w.distanceFromStartMi > currentMile && activeStopIds.has(w.id),
-    ) ?? null;
-  const nextResupply =
-    route.waypoints.find(
-      (w) =>
-        w.type === 'resupply' && w.distanceFromStartMi > currentMile && activeStopIds.has(w.id),
-    ) ?? null;
-  const nextCamp =
-    route.waypoints.find(
-      (w) => w.type === 'camping' && w.distanceFromStartMi > currentMile && activeStopIds.has(w.id),
-    ) ?? null;
-
-  const distWater = nextWater ? nextWater.distanceFromStartMi - currentMile : 0;
-  const distResupply = nextResupply ? nextResupply.distanceFromStartMi - currentMile : 0;
-  const distCamp = nextCamp ? nextCamp.distanceFromStartMi - currentMile : 0;
-
-  const cards = [
-    {
-      id: 'water',
-      label: 'Next Drink',
-      icon: ICONS.water,
-      value: nextWater ? `${distWater.toFixed(1)} mi` : 'None found',
-      detail: nextWater ? nextWater.name : `${waterWpts.length} sources mapped`,
-      state: nextWater ? 'active' : 'idle',
-      reliability: nextWater?.reliability ?? 0,
-    },
-    {
-      id: 'resupply',
-      label: 'Next Resupply',
-      icon: ICONS.resupply,
-      value: nextResupply ? `${distResupply.toFixed(1)} mi` : 'None found',
-      detail: nextResupply ? nextResupply.name : `${resupplyWpts.length} options mapped`,
-      state: nextResupply ? 'active' : 'idle',
-    },
-    {
-      id: 'daylight',
-      label: 'Next Camp',
-      icon: ICONS.daylight,
-      value: nextCamp ? `${distCamp.toFixed(1)} mi` : '—',
-      detail: nextCamp
-        ? nextCamp.name
-        : campWpts.length > 0
-          ? `${campWpts.length} camp spots mapped`
-          : 'No camps found yet',
-      state: nextCamp ? 'active' : 'idle',
-    },
-  ];
-
-  const cardsEl = container.querySelector('#resource-cards');
-  cardsEl.innerHTML = cards.map(renderResourceCard).join('');
-
+  currentNextResource = updateResourceCardsUI(container, route, planOptions, currentMile);
   updateSunsprintDisplay(container, route, currentMile, 10); // default 10 mph
 }
 
@@ -1474,6 +1522,8 @@ export function updateSunsprintDisplay(container, route, currentMile, paceMph) {
   const targetWrapper = card.querySelector('#sunsprint-target-wrapper');
   const targetSlider = card.querySelector('#sunsprint-target-slider');
   const targetVal = card.querySelector('#sunsprint-target-val');
+  const ghostBtn = card.querySelector('#ghost-mode-enter-btn');
+  const ghostEtaVal = document.getElementById('ghost-mode-eta-val');
 
   if (!route) {
     card.className = 'daylight-bar-card';
@@ -1482,6 +1532,7 @@ export function updateSunsprintDisplay(container, route, currentMile, paceMph) {
     if (trackEl) trackEl.hidden = true;
     if (bufferText) bufferText.hidden = true;
     if (targetWrapper) targetWrapper.hidden = true;
+    if (ghostBtn) ghostBtn.hidden = true;
     return;
   }
 
@@ -1490,9 +1541,10 @@ export function updateSunsprintDisplay(container, route, currentMile, paceMph) {
   if (trackEl) trackEl.hidden = false;
   if (bufferText) bufferText.hidden = false;
   if (targetWrapper) targetWrapper.hidden = false;
+  if (ghostBtn) ghostBtn.hidden = false;
 
   const maxMiles = route.totalDistanceMiles;
-  
+
   // Set slider min and max
   if (targetSlider) {
     const currentSliderMin = Number(targetSlider.min);
@@ -1500,7 +1552,7 @@ export function updateSunsprintDisplay(container, route, currentMile, paceMph) {
     if (currentSliderMin !== newMin) {
       targetSlider.min = newMin;
     }
-    
+
     if (Number(targetSlider.max) !== Math.ceil(maxMiles)) {
       targetSlider.max = Math.ceil(maxMiles);
     }
@@ -1519,12 +1571,19 @@ export function updateSunsprintDisplay(container, route, currentMile, paceMph) {
   const now = new Date();
   const result = calculateDaylightBuffer(route, currentMile, paceMph, sunsprintTargetMile, now);
 
+  currentEtaDate = result.eta;
+
   const formatTime = (date) => date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const formattedEta = formatTime(result.eta);
 
   card.querySelector('#sunsprint-sunrise').textContent = formatTime(result.sunrise);
   card.querySelector('#sunsprint-sunset').textContent = formatTime(result.sunset);
-  card.querySelector('#sunsprint-eta-val').textContent = formatTime(result.eta);
+  card.querySelector('#sunsprint-eta-val').textContent = formattedEta;
   card.querySelector('#sunsprint-eta-marker').hidden = false;
+
+  if (ghostEtaVal) {
+    ghostEtaVal.textContent = formattedEta;
+  }
 
   const totalRemainingTimeMs = result.sunset.getTime() - now.getTime();
   const rideTimeMs = result.eta.getTime() - now.getTime();
@@ -1547,9 +1606,16 @@ export function updateSunsprintDisplay(container, route, currentMile, paceMph) {
   }
 
   // Haptic alert on transition to red alert (<30m)
-  if (result.status === 'alert' && (lastSunsprintStatus === 'ok' || lastSunsprintStatus === 'warning')) {
+  if (
+    result.status === 'alert' &&
+    (lastSunsprintStatus === 'ok' || lastSunsprintStatus === 'warning')
+  ) {
     if (typeof navigator !== 'undefined' && navigator.vibrate) {
-      try { navigator.vibrate([300, 200, 300]); } catch (e) { console.warn(e); }
+      try {
+        navigator.vibrate([300, 200, 300]);
+      } catch (e) {
+        console.warn(e);
+      }
     }
   }
   lastSunsprintStatus = result.status;
@@ -1575,8 +1641,18 @@ function showMapSection(container, route) {
 
   // Populate the route stats bar dynamically
   updateRouteStats(container, route, planOptions);
+  renderElevationProfile(container.querySelector('#elevation-profile-container'), route);
 
-  // Update FAB to "Change Route"
+  // Update Header & FAB for loaded route
+  const headerChangeBtnEl = container.querySelector('#header-change-route-btn');
+  if (headerChangeBtnEl) headerChangeBtnEl.hidden = false;
+
+  const fabZoneEl = container.querySelector('.fab-zone');
+  if (fabZoneEl) fabZoneEl.setAttribute('data-has-route', 'true');
+
+  const fabLinksEl = container.querySelector('.fab-links');
+  if (fabLinksEl) fabLinksEl.hidden = true;
+
   const fab = container.querySelector('.fab');
   fab.setAttribute('aria-label', 'Load a different route');
   fab.querySelector('.fab-label').textContent = 'Change Route';
@@ -1598,6 +1674,18 @@ function showMapSection(container, route) {
 
   // Initialise MapLibre — must happen after the section is visible
   currentMap = initMap('map', route, [], []);
+
+  // Listen for segment highlight requests from Segment Analytics cards/drawer
+  window.addEventListener('bpnav-highlight-segment', (e) => {
+    const { startMi, endMi } = e.detail || {};
+    if (currentRoute && currentMap && Number.isFinite(startMi) && Number.isFinite(endMi)) {
+      highlightMapSegment(currentMap, currentRoute.trackPoints, startMi, endMi);
+      const profileContainer = container.querySelector('#elevation-profile-container');
+      if (profileContainer) {
+        highlightProfileSegment(profileContainer, currentRoute, startMi, endMi);
+      }
+    }
+  });
 
   // Draw initial mile markers if checked
   const toggleMilesCheckbox = container.querySelector('#map-toggle-miles');
@@ -1647,6 +1735,33 @@ function showError(container, message) {
  */
 async function tryRestoreRoute(container) {
   try {
+    const all = await getAllRoutes().catch(() => []);
+    if (all.length === 0) {
+      // Auto-seed Coconino Loop demo route if library is empty
+      try {
+        const res = await fetch('./Coconino_Loop.gpx');
+        if (res.ok) {
+          const text = await res.text();
+          const route = parseGPX(text);
+          const routeId = await saveRouteToLibrary({
+            id: 'coconino-loop-demo',
+            name: 'Coconino Loop',
+            filename: 'Coconino_Loop.gpx',
+            gpxText: text,
+            totalDistanceMiles: route.totalDistanceMiles,
+            waypoints: route.waypoints || [],
+          });
+          await setActiveRouteId(routeId);
+          applyRoute(container, route);
+          kickoffWaterEnrichment(container, route);
+          kickoffCampEnrichment(container, route);
+          kickoffResupplyEnrichment(container, route);
+          return;
+        }
+      } catch (_) {}
+    }
+  } catch (_) {}
+  try {
     const stored = await loadRoute();
     if (!stored) return;
 
@@ -1664,7 +1779,7 @@ async function tryRestoreRoute(container) {
     // for a network round-trip — critical when the device is offline.
     const cachedWaypoints = await loadEnrichment().catch(() => null);
     if (cachedWaypoints?.length) {
-      route.waypoints = cachedWaypoints;
+      route.waypoints = sanitizeWaypoints(cachedWaypoints);
       updateResourceCards(container, route);
       updatePlanningView(container.querySelector('#planning-view'), route, planOptions);
       updateRouteStats(container, route, planOptions);

@@ -362,7 +362,7 @@ describe('mergeWaterSources with flowMap', () => {
     const merged = mergeWaterSources(route, [usgsFeature], [], flowMap);
     const station = merged.find((w) => w.id === 'usgs-09505200');
     expect(station.reliability).toBe(90);
-    expect(station.description).toContain('Flowing: 12.5 cfs');
+    expect(station.description).toContain('12.5 cfs');
   });
 
   it('sets reliability to 0% when flow is zero', () => {

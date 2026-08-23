@@ -1,0 +1,59 @@
+[
+  {
+    "name": "Lumberyard Brewing",
+    "lat": 35.1952,
+    "lon": -111.6483,
+    "type": "resupply",
+    "description": "CLR13 Cuesheet: Post-ride finish / starting town resupply in Flagstaff.",
+    "source": "cuesheet",
+    "reliability": 100
+  },
+  {
+    "name": "ADOT Little Antelope Maintenance Yard Spigot",
+    "lat": 35.0842,
+    "lon": -111.7214,
+    "type": "water",
+    "description": "CLR13 Cuesheet: Frost-free spigot on North side of ADOT maintenance building. Reliable year-round.",
+    "source": "cuesheet",
+    "reliability": 95
+  },
+  {
+    "name": "Oak Creek at Chavez Crossing",
+    "lat": 34.8421,
+    "lon": -111.7583,
+    "type": "water",
+    "description": "CLR13 Cuesheet: Perennial streamflow. Requires water treatment / filter.",
+    "source": "cuesheet",
+    "reliability": 90
+  },
+  {
+    "name": "Dead Horse Ranch State Park Camp",
+    "lat": 34.7575,
+    "lon": -112.0125,
+    "type": "camping",
+    "description": "CLR13 Cuesheet: Official state park campground with potable water, hot showers, and shade.",
+    "source": "cuesheet",
+    "tier": "official",
+    "landManager": "State Land",
+    "reliability": 95,
+    "waterAvailable": "potable",
+    "waterDetails": "Potable water, hot showers, and restrooms available",
+    "fee": "$25-$35/night",
+    "elevationFt": 3300
+  },
+  {
+    "name": "Bill Williams Mountain Saddle Camp",
+    "lat": 35.2105,
+    "lon": -112.2155,
+    "type": "camping",
+    "description": "CLR13 Cuesheet: Dispersed camping on Kaibab National Forest land. Bring all water.",
+    "source": "cuesheet",
+    "tier": "dispersed",
+    "landManager": "USFS",
+    "reliability": 85,
+    "waterAvailable": "none",
+    "waterDetails": "No water (dry camp — carry all water)",
+    "fee": "Free",
+    "elevationFt": 8200
+  }
+]

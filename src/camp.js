@@ -62,6 +62,95 @@ export function osmCampReliability(tags) {
   return 80;
 }
 
+/**
+ * Infers water availability and details for a campground from OSM tags or descriptions.
+ * @param {Object} tags
+ * @param {string} [name='']
+ * @param {string} [desc='']
+ * @returns {{ waterAvailable: 'potable' | 'natural' | 'none' | 'unknown', waterDetails: string }}
+ */
+export function osmCampWater(tags = {}, name = '', desc = '') {
+  if (
+    tags.drinking_water === 'yes' ||
+    tags['drinking_water:legal'] === 'yes' ||
+    tags.water === 'potable'
+  ) {
+    return {
+      waterAvailable: 'potable',
+      waterDetails: tags.waterDetails || 'Potable water available',
+    };
+  }
+  if (tags.drinking_water === 'no') {
+    return { waterAvailable: 'none', waterDetails: 'No potable water' };
+  }
+  if (tags.water === 'yes' || tags.natural === 'spring' || tags.waterway) {
+    return { waterAvailable: 'natural', waterDetails: 'Natural water source (filter required)' };
+  }
+
+  const text = `${name} ${desc} ${tags.description || ''} ${tags.note || ''}`.toLowerCase();
+  if (
+    text.includes('potable water') ||
+    text.includes('drinking water') ||
+    text.includes('spigot') ||
+    text.includes('hand pump') ||
+    text.includes('pump available') ||
+    text.includes('faucet')
+  ) {
+    const details = text.includes('hand pump')
+      ? 'Potable water available (hand pump)'
+      : 'Potable water available';
+    return { waterAvailable: 'potable', waterDetails: details };
+  }
+  if (
+    text.includes('no water') ||
+    text.includes('dry camp') ||
+    text.includes('bring all water') ||
+    text.includes('carry all water') ||
+    text.includes('no potable water')
+  ) {
+    return { waterAvailable: 'none', waterDetails: 'No water (dry camp — carry all water)' };
+  }
+  if (
+    text.includes('creek') ||
+    text.includes('stream') ||
+    text.includes('river') ||
+    text.includes('spring') ||
+    text.includes('lake') ||
+    text.includes('filter required')
+  ) {
+    return { waterAvailable: 'natural', waterDetails: 'Stream / natural water (filter required)' };
+  }
+
+  return { waterAvailable: 'unknown', waterDetails: '' };
+}
+
+/**
+ * Infers fee information for a campground from OSM tags or descriptions.
+ * @param {Object} tags
+ * @param {string} [name='']
+ * @param {string} [desc='']
+ * @returns {string|null}
+ */
+export function osmCampFee(tags = {}, name = '', desc = '') {
+  if (tags.charge) return tags.charge;
+  if (tags.fee === 'no') return 'Free';
+  if (tags.fee === 'yes') return 'Fee required';
+
+  const text = `${name} ${desc} ${tags.description || ''} ${tags.note || ''}`.toLowerCase();
+  const feeMatch = text.match(/\$(\d+(?:\.\d+)?(?:\/(?:night|site|day))?)/i);
+  if (feeMatch) {
+    return feeMatch[0].includes('/') ? feeMatch[0] : `${feeMatch[0]}/night`;
+  }
+  if (text.includes('free') || text.includes('dispersed') || text.includes('no fee')) {
+    return 'Free';
+  }
+  if (text.includes('fee required') || text.includes('permit required')) {
+    return 'Fee / Permit Required';
+  }
+
+  return null;
+}
+
 export async function fetchOSMCampSites(bounds) {
   const { minLon, minLat, maxLon, maxLat } = bounds;
   const bbox = `${minLat},${minLon},${maxLat},${maxLon}`;
@@ -85,10 +174,71 @@ export async function fetchOSMCampSites(bounds) {
   }
 }
 
+export function classifyLandManager(tags = {}, agencyCode = '') {
+  const code = (agencyCode || '').toUpperCase();
+  const op = `${tags.operator ?? ''} ${tags.name ?? ''} ${tags.description ?? ''}`.toLowerCase();
+
+  if (code.includes('BLM') || op.includes('blm') || op.includes('bureau of land management')) {
+    return { landManager: 'BLM', isDispersedLegal: true };
+  }
+  if (
+    code.includes('USFS') ||
+    op.includes('usfs') ||
+    op.includes('forest service') ||
+    op.includes('national forest')
+  ) {
+    return { landManager: 'USFS', isDispersedLegal: true };
+  }
+  if (code.includes('NPS') || op.includes('nps') || op.includes('national park')) {
+    return { landManager: 'NPS', isDispersedLegal: false };
+  }
+  if (code.includes('STATE') || op.includes('state park') || op.includes('state forest')) {
+    return { landManager: 'State Land', isDispersedLegal: false };
+  }
+  if (code.includes('PVT') || op.includes('private')) {
+    return { landManager: 'Private', isDispersedLegal: false };
+  }
+
+  return { landManager: 'Public Land', isDispersedLegal: true };
+}
+
+export async function fetchLandOwnership(lat, lon) {
+  const url = `https://gis.blm.gov/arcgis/rest/services/lands/BLM_Natl_SMA_Cached/MapServer/0/query?geometry=${lon},${lat}&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=ADMIN_AGENCY_CODE,HOLDING_NAME,ADMIN_UNIT_NAME&f=json`;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
+    if (!res.ok) throw new Error(`BLM REST HTTP ${res.status}`);
+    const data = await res.json();
+    const attrs = data.features?.[0]?.attributes ?? {};
+    const agencyCode = attrs.ADMIN_AGENCY_CODE || attrs.HOLDING_NAME || '';
+    return classifyLandManager({}, agencyCode);
+  } catch (_err) {
+    return classifyLandManager({}, '');
+  }
+}
+
 export function mergeCampSources(route, osmElements) {
   const { trackPoints } = route;
   const sampled = sampleTrackPoints(trackPoints);
-  const existing = route.waypoints.filter((w) => w.type === 'camping');
+  const existing = route.waypoints
+    .filter((w) => w.type === 'camping')
+    .map((w) => {
+      const { landManager, isDispersedLegal } = classifyLandManager({
+        name: w.name,
+        description: w.description,
+      });
+      const waterInfo = osmCampWater(w.tags || {}, w.name, w.description);
+      const feeInfo = osmCampFee(w.tags || {}, w.name, w.description);
+      return {
+        ...w,
+        landManager: w.landManager || landManager,
+        isDispersedLegal: w.isDispersedLegal ?? isDispersedLegal,
+        waterAvailable:
+          w.waterAvailable ||
+          (waterInfo.waterAvailable !== 'unknown' ? waterInfo.waterAvailable : null),
+        waterDetails: w.waterDetails || waterInfo.waterDetails || '',
+        fee: w.fee || feeInfo || null,
+      };
+    });
   const merged = [...existing];
 
   for (const el of osmElements) {
@@ -102,6 +252,14 @@ export function mergeCampSources(route, osmElements) {
     if (merged.some((w) => haversineDistance(lat, lon, w.lat, w.lon) < DEDUP_THRESHOLD_MI)) {
       continue;
     }
+    const { landManager, isDispersedLegal } = classifyLandManager(tags);
+    const { waterAvailable, waterDetails } = osmCampWater(
+      tags,
+      tags.name,
+      tags.description || tags.note,
+    );
+    const fee = osmCampFee(tags, tags.name, tags.description || tags.note);
+
     merged.push({
       id: `osm-camp-${el.id}`,
       lat,
@@ -113,6 +271,11 @@ export function mergeCampSources(route, osmElements) {
       tier,
       reliability: osmCampReliability(tags),
       distanceFromStartMi: distanceFromStart(lat, lon, trackPoints),
+      landManager,
+      isDispersedLegal,
+      waterAvailable: waterAvailable !== 'unknown' ? waterAvailable : null,
+      waterDetails,
+      fee,
     });
   }
 
@@ -121,5 +284,6 @@ export function mergeCampSources(route, osmElements) {
 
 export async function enrichCampSources(route) {
   const osmElements = await fetchOSMCampSites(route.bounds);
-  return mergeCampSources(route, osmElements);
+  const merged = mergeCampSources(route, osmElements);
+  return merged;
 }

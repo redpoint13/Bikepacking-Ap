@@ -221,6 +221,37 @@ describe('buildPopupHTML', () => {
     const html = buildPopupHTML(CAMP_WP);
     expect(html).not.toContain('popup-desc');
   });
+
+  it('includes water amenity badge for potable water campgrounds', () => {
+    const wp = {
+      ...CAMP_WP_OFFICIAL,
+      waterAvailable: 'potable',
+      waterDetails: 'Potable water (hand pump)',
+    };
+    const html = buildPopupHTML(wp);
+    expect(html).toContain('popup-amenity--water-potable');
+    expect(html).toContain('Potable water (hand pump)');
+  });
+
+  it('includes fee badge for paid campgrounds', () => {
+    const wp = {
+      ...CAMP_WP_OFFICIAL,
+      fee: '$27/night',
+    };
+    const html = buildPopupHTML(wp);
+    expect(html).toContain('popup-amenity--fee');
+    expect(html).toContain('$27/night');
+  });
+
+  it('includes free badge for free camping', () => {
+    const wp = {
+      ...CAMP_WP,
+      fee: 'Free',
+    };
+    const html = buildPopupHTML(wp);
+    expect(html).toContain('popup-amenity--fee-free');
+    expect(html).toContain('Free');
+  });
 });
 
 // ---------------------------------------------------------------------------

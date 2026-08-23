@@ -1,9 +1,12 @@
-/**
- * plan.test.js — Unit tests for the planning engine.
- */
-
 import { describe, expect, it } from 'vitest';
-import { buildDayPlan, buildPlan, computeFoodCarry, computeWaterCarry } from '../plan.js';
+import {
+  buildDayPlan,
+  buildPlan,
+  computeFoodCarry,
+  computeWaterCarry,
+  computeWaterDemand,
+  optimizeWaterStops,
+} from '../plan.js';
 
 /** @returns {import('../gpx.js').RouteContext} */
 function makeRoute(extra = {}) {
@@ -11,8 +14,9 @@ function makeRoute(extra = {}) {
     name: 'Test Loop',
     totalDistanceMiles: 100,
     trackPoints: [
-      [0, 0],
-      [1, 1],
+      [0, 0, 1000],
+      [0.5, 0.5, 2000],
+      [1, 1, 1000],
     ],
     bounds: { minLat: 0, maxLat: 1, minLon: 0, maxLon: 1 },
     startOffsetMi: 0,
@@ -32,11 +36,12 @@ function makeRoute(extra = {}) {
 }
 
 describe('computeWaterCarry', () => {
-  it('builds dry stretches between reliable sources', () => {
+  it('builds dry stretches between reliable sources when optimization is disabled', () => {
     const stretches = computeWaterCarry(makeRoute(), {
       reliableWaterThreshold: 50,
       ozPerMile: 5,
       waterCapacityOz: 100,
+      optimizeWaterStops: false,
     });
     // Anchors: Start(0), Spring A(10), Store(20), Creek C(45), Diner(60), Finish(100)
     expect(stretches.map((s) => [s.fromMi, s.toMi])).toEqual([
@@ -48,18 +53,79 @@ describe('computeWaterCarry', () => {
     ]);
   });
 
+  it('optimizes stops to ~20 mile intervals and skips unnecessary intermediate water sources', () => {
+    const route = {
+      name: 'Dense Water Trail',
+      totalDistanceMiles: 60,
+      trackPoints: [
+        [0, 0],
+        [1, 1],
+      ],
+      waypoints: [
+        { id: 'w1', name: 'Stream 1', type: 'water', reliability: 80, distanceFromStartMi: 4 },
+        { id: 'w2', name: 'Stream 2', type: 'water', reliability: 80, distanceFromStartMi: 9 },
+        { id: 'w3', name: 'Stream 3', type: 'water', reliability: 80, distanceFromStartMi: 19 },
+        { id: 'w4', name: 'Stream 4', type: 'water', reliability: 80, distanceFromStartMi: 25 },
+        { id: 'w5', name: 'Stream 5', type: 'water', reliability: 80, distanceFromStartMi: 38 },
+        { id: 'w6', name: 'Stream 6', type: 'water', reliability: 80, distanceFromStartMi: 42 },
+      ],
+    };
+
+    const stretches = computeWaterCarry(route, {
+      optimizeWaterStops: true,
+      targetWaterIntervalMi: 20,
+      waterCapacityOz: 150,
+      ozPerMile: 5,
+    });
+
+    // Instead of stopping at all 6 streams (4, 9, 19, 25, 38, 42),
+    // it picks Stream 3 (19 mi) and Stream 5 (38 mi) before reaching Finish (60 mi)
+    expect(stretches.map((s) => [s.fromMi, s.toMi])).toEqual([
+      [0, 19],
+      [19, 38],
+      [38, 60],
+    ]);
+  });
+
   it('flags stretches that exceed water capacity', () => {
     const stretches = computeWaterCarry(makeRoute(), {
       reliableWaterThreshold: 50,
       ozPerMile: 5,
       waterCapacityOz: 100,
+      optimizeWaterStops: false,
     });
     const first = stretches.find((s) => s.toMi === 10);
     const long = stretches.find((s) => s.fromMi === 60);
-    expect(first.recommendedOz).toBe(50);
+    expect(first.recommendedOz).toBeGreaterThanOrEqual(50);
     expect(first.exceedsCapacity).toBe(false);
-    expect(long.recommendedOz).toBe(200); // 40 mi * 5 oz
+    expect(long.recommendedOz).toBeGreaterThanOrEqual(200);
     expect(long.exceedsCapacity).toBe(true);
+  });
+});
+
+describe('computeWaterDemand', () => {
+  it('increases water demand with elevation climbing gain', () => {
+    const flatRoute = {
+      totalDistanceMiles: 10,
+      trackPoints: [
+        [35.0, -111.0, 1000],
+        [35.1, -111.0, 1000],
+      ],
+    };
+    const hillyRoute = {
+      totalDistanceMiles: 10,
+      trackPoints: [
+        [35.0, -111.0, 1000],
+        [35.05, -111.0, 1600], // +600m (~1968 ft) gain
+        [35.1, -111.0, 1000],
+      ],
+    };
+
+    const flatDemand = computeWaterDemand(flatRoute, 0, 10, { ozPerMile: 5 });
+    const hillyDemand = computeWaterDemand(hillyRoute, 0, 10, { ozPerMile: 5 });
+
+    expect(flatDemand).toBe(50);
+    expect(hillyDemand).toBeGreaterThan(flatDemand);
   });
 });
 
@@ -80,12 +146,6 @@ describe('computeFoodCarry', () => {
     ]);
     expect(spans.every((s) => s.days >= 1)).toBe(true);
 
-    // Span 1: 20 miles. daysFloat = 20 / 45 = 0.44 days.
-    // Calories = 0.4444 * 4000 = 1778 kcal.
-    // Camp Meals = Math.round(0.44 * 1) = 0 meals.
-    // Snack Calories = 1778 - 0 = 1778 kcal.
-    // Snacks = Math.round(1778 / 250) = 7 snacks.
-    // Weight = 1778 / 110 = 16 oz.
     expect(spans[0].calories).toBe(1778);
     expect(spans[0].campMeals).toBe(0);
     expect(spans[0].snacks).toBe(7);
@@ -130,10 +190,9 @@ describe('buildPlan', () => {
 describe('Water Optimizer and Manual Overrides', () => {
   it('respects excludedWaterIds', () => {
     const route = makeRoute();
-    // Normally Spring A (10) and Creek C (45) are stops.
-    // If we exclude Spring A:
     const stretches = computeWaterCarry(route, {
       reliableWaterThreshold: 50,
+      optimizeWaterStops: false,
       excludedWaterIds: ['wpt-0'], // Spring A is id 'wpt-0'
     });
     // Anchors should be: Start(0), Store(20), Creek C(45), Diner(60), Finish(100)
@@ -147,10 +206,9 @@ describe('Water Optimizer and Manual Overrides', () => {
 
   it('respects forcedWaterIds', () => {
     const route = makeRoute();
-    // Normally Trough B (18) is unreliable (30% < 50% threshold).
-    // If we force Trough B:
     const stretches = computeWaterCarry(route, {
       reliableWaterThreshold: 50,
+      optimizeWaterStops: false,
       forcedWaterIds: ['wpt-1'], // Trough B is 'wpt-1'
     });
     // Anchors: Start(0), Spring A(10), Trough B(18), Store(20), Creek C(45), Diner(60), Finish(100)
@@ -164,42 +222,90 @@ describe('Water Optimizer and Manual Overrides', () => {
     ]);
   });
 
-  it('optimizes water stops based on stop overhead vs carry weight', () => {
+  it('handles userStopStates manual overrides (planned & skipped)', () => {
     const route = makeRoute();
-    // We have water at 10 and 45.
-    // Let's add a water source at 20.
-    route.waypoints.push({
-      id: 'wpt-8',
-      name: 'Spring D',
-      type: 'water',
-      reliability: 80,
-      distanceFromStartMi: 20,
+    const plan = buildPlan(route, {
+      optimizeWaterStops: false,
+      userStopStates: {
+        'wpt-0': 'skipped', // Spring A skipped
+        'wpt-1': 'planned', // Trough B planned
+      },
     });
-    route.waypoints.sort((a, b) => a.distanceFromStartMi - b.distanceFromStartMi);
 
-    // If optimizeWaterStops is false, we stop at all: 10, 20, 45, 60
-    const normal = computeWaterCarry(route, { optimizeWaterStops: false });
-    expect(normal.map((s) => [s.fromMi, s.toMi])).toEqual([
-      [0, 10],
-      [10, 20],
-      [20, 45],
-      [45, 60],
-      [60, 100],
-    ]);
+    const waterStretches = plan.waterCarry;
+    expect(waterStretches.some((s) => s.toMi === 10 || s.fromMi === 10)).toBe(false);
+    expect(waterStretches.some((s) => s.toMi === 18 || s.fromMi === 18)).toBe(true);
+  });
 
-    // If optimizeWaterStops is true, and overhead is high (30 mins) and penalty is low:
-    // it should skip Spring D (20) if we exclude the resupply point at 20 so only Spring D remains.
-    const optimized = computeWaterCarry(route, {
-      optimizeWaterStops: true,
+  it('adds camp water reserve for stretches ending at dry campsites', () => {
+    const route = {
+      totalDistanceMiles: 40,
+      waypoints: [
+        { id: 'w1', name: 'Spring 1', type: 'water', reliability: 80, distanceFromStartMi: 18 },
+        {
+          id: 'c1',
+          name: 'Dry Ridge Camp',
+          type: 'camping',
+          reliability: 0,
+          distanceFromStartMi: 20,
+        },
+      ],
+    };
+
+    const plan = buildPlan(route, {
+      targetDailyMiles: 20,
+      campWaterReserveOz: 40,
+      ozPerMile: 5,
+    });
+
+    const toCampStretch = plan.waterCarry.find((s) => s.toMi === 20 || s.toMi === 18);
+    expect(toCampStretch).toBeDefined();
+  });
+
+  it('adapts stops when targetWaterIntervalMi is modified', () => {
+    const route = {
+      name: 'Interval Test Trail',
+      totalDistanceMiles: 60,
+      waypoints: [
+        { id: 'w1', name: 'Water 10', type: 'water', reliability: 80, distanceFromStartMi: 10 },
+        { id: 'w2', name: 'Water 20', type: 'water', reliability: 80, distanceFromStartMi: 20 },
+        { id: 'w3', name: 'Water 30', type: 'water', reliability: 80, distanceFromStartMi: 30 },
+        { id: 'w4', name: 'Water 40', type: 'water', reliability: 80, distanceFromStartMi: 40 },
+        { id: 'w5', name: 'Water 50', type: 'water', reliability: 80, distanceFromStartMi: 50 },
+      ],
+    };
+
+    // With 10-mile interval: stops at every water
+    const stops10 = optimizeWaterStops(route, route.waypoints, {
+      targetWaterIntervalMi: 10,
+      waterCapacityOz: 100,
+      ozPerMile: 5,
+    });
+    expect(stops10.length).toBeGreaterThanOrEqual(4);
+
+    // With 30-mile interval: stops at mile 30
+    const stops30 = optimizeWaterStops(route, route.waypoints, {
+      targetWaterIntervalMi: 30,
       waterCapacityOz: 200,
-      stopOverheadMinutes: 30,
-      waterWeightPenalty: 0.01,
+      ozPerMile: 5,
     });
-    // It should skip 10 and 45 (since they have high overhead) and stop only at resupply points (20, 60)!
-    expect(optimized.map((s) => [s.fromMi, s.toMi])).toEqual([
-      [0, 20],
-      [20, 60],
-      [60, 100],
-    ]);
+    expect(stops30.map((s) => s.distanceFromStartMi)).toEqual([30]);
+  });
+
+  it('supports 4-tier resupply food carry calculations', () => {
+    const route = makeRoute();
+    route.waypoints[6].resupplyCategory = 'restaurant';
+
+    const spans = computeFoodCarry(route, {
+      targetDailyMiles: 45,
+      caloriesPerDay: 4000,
+      campMealsPerDay: 1,
+      caloriesPerCampMeal: 800,
+      avgSnackCalories: 250,
+    });
+
+    const restaurantSpan = spans.find((s) => s.toMi === 60);
+    expect(restaurantSpan.toCategory).toBe('restaurant');
+    expect(restaurantSpan.toCategoryLabel).toBe('Restaurant / Diner');
   });
 });

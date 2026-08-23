@@ -7,6 +7,8 @@
  * @module gpx
  */
 
+import { calculateRouteDifficulty } from './difficulty.js';
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -117,19 +119,56 @@ export function computeRouteDistance(points) {
 }
 
 /**
+ * Cached helper to get or compute the cumulative along-track distance array.
+ * @param {Array<[number, number]>} trackPoints
+ * @returns {Float64Array}
+ */
+export function getOrCreateCumulativeDistances(trackPoints) {
+  if (!trackPoints || trackPoints.length === 0) return new Float64Array(0);
+  if (
+    trackPoints._cumulativeDistances &&
+    trackPoints._cumulativeDistances.length === trackPoints.length
+  ) {
+    return trackPoints._cumulativeDistances;
+  }
+  const distances = new Float64Array(trackPoints.length);
+  let acc = 0;
+  distances[0] = 0;
+  for (let i = 1; i < trackPoints.length; i++) {
+    acc += haversineDistance(
+      trackPoints[i - 1][0],
+      trackPoints[i - 1][1],
+      trackPoints[i][0],
+      trackPoints[i][1],
+    );
+    distances[i] = acc;
+  }
+  trackPoints._cumulativeDistances = distances;
+  trackPoints._totalDistance = acc;
+  return distances;
+}
+
+/**
  * Finds the index of the track point closest to a given lat/lon.
+ * Uses fast equirectangular projection distance squared for high performance.
  * @param {number} lat
  * @param {number} lon
  * @param {Array<[number, number]>} trackPoints
  * @returns {number} Index into trackPoints
  */
 export function nearestTrackPointIndex(lat, lon, trackPoints) {
+  if (!trackPoints || trackPoints.length === 0) return 0;
   let nearestIdx = 0;
-  let nearestDist = Number.POSITIVE_INFINITY;
+  let nearestDistSq = Number.POSITIVE_INFINITY;
+  const cosLat = Math.cos((lat * Math.PI) / 180);
+
   for (let i = 0; i < trackPoints.length; i++) {
-    const d = haversineDistance(lat, lon, trackPoints[i][0], trackPoints[i][1]);
-    if (d < nearestDist) {
-      nearestDist = d;
+    const pt = trackPoints[i];
+    const dLat = pt[0] - lat;
+    const dLon = (pt[1] - lon) * cosLat;
+    const distSq = dLat * dLat + dLon * dLon;
+    if (distSq < nearestDistSq) {
+      nearestDistSq = distSq;
       nearestIdx = i;
     }
   }
@@ -138,15 +177,17 @@ export function nearestTrackPointIndex(lat, lon, trackPoints) {
 
 /**
  * Calculates the along-track distance from the route start to a waypoint.
- * Finds the nearest track point, then sums segment lengths to that index.
+ * Finds the nearest track point, then returns the cumulative distance in O(1).
  * @param {number} lat
  * @param {number} lon
  * @param {Array<[number, number]>} trackPoints
  * @returns {number} Distance in miles from route start
  */
 export function distanceFromStart(lat, lon, trackPoints) {
+  if (!trackPoints || trackPoints.length === 0) return 0;
   const idx = nearestTrackPointIndex(lat, lon, trackPoints);
-  return computeRouteDistance(trackPoints.slice(0, idx + 1));
+  const distances = getOrCreateCumulativeDistances(trackPoints);
+  return distances[idx] ?? 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -227,6 +268,7 @@ function getText(el, tag) {
  * @property {{ lat: number, lon: number }} startPoint
  * @property {number} startOffsetMi  - Miles along the route where the rider starts (0 = true start)
  * @property {boolean} isLoop        - True when start and end are within 1 mile of each other
+ * @property {Object} metadata       - Route-specific metadata (forced stops, etc.)
  */
 export function parseGPX(xmlString) {
   const parser = new DOMParser();
@@ -258,12 +300,20 @@ export function parseGPX(xmlString) {
     const lon = Number.parseFloat(pt.getAttribute('lon'));
     if (Number.isNaN(lat) || Number.isNaN(lon)) continue;
 
-    trackPoints.push([lat, lon]);
+    const eleStr = getText(pt, 'ele');
+    const ele = eleStr ? Number.parseFloat(eleStr) : 0;
+
+    trackPoints.push([lat, lon, Number.isNaN(ele) ? 0 : ele]);
     if (lat < minLat) minLat = lat;
     if (lat > maxLat) maxLat = lat;
     if (lon < minLon) minLon = lon;
     if (lon > maxLon) maxLon = lon;
   }
+
+  // --- Precalculate cumulative distances for O(1) waypoint distance lookup ---
+  const cumDistances = getOrCreateCumulativeDistances(trackPoints);
+  const totalDistanceMiles =
+    trackPoints._totalDistance || cumDistances[cumDistances.length - 1] || 0;
 
   // --- Waypoints ---
   const wptEls = doc.getElementsByTagName('wpt');
@@ -280,7 +330,7 @@ export function parseGPX(xmlString) {
     const type = classifyWaypoint(wptName, description);
     const reliability = defaultReliability(type, wptName);
     const nearestIdx = nearestTrackPointIndex(lat, lon, trackPoints);
-    const distanceFromStartMi = computeRouteDistance(trackPoints.slice(0, nearestIdx + 1));
+    const distanceFromStartMi = cumDistances[nearestIdx] ?? 0;
     const nearestPt = trackPoints[nearestIdx];
     const offCourseDistanceMi = haversineDistance(lat, lon, nearestPt[0], nearestPt[1]);
 
@@ -297,10 +347,7 @@ export function parseGPX(xmlString) {
     });
   }
 
-  // Sort waypoints by distance from start so the "nearest ahead" logic is easy
   waypoints.sort((a, b) => a.distanceFromStartMi - b.distanceFromStartMi);
-
-  const totalDistanceMiles = computeRouteDistance(trackPoints);
   const startPoint = { lat: trackPoints[0][0], lon: trackPoints[0][1] };
 
   // Detect loop: start and end within 1 mile
@@ -313,7 +360,7 @@ export function parseGPX(xmlString) {
       trackPoints[trackPoints.length - 1][1],
     ) < 1.0;
 
-  return {
+  const routeCtx = {
     name,
     totalDistanceMiles,
     trackPoints,
@@ -322,7 +369,15 @@ export function parseGPX(xmlString) {
     startPoint,
     startOffsetMi: 0,
     isLoop,
+    metadata: {
+      forcedWaterIds: [],
+      forcedResupplyIds: [],
+      forcedCampIds: [],
+    },
   };
+
+  routeCtx.difficulty = calculateRouteDifficulty(routeCtx);
+  return routeCtx;
 }
 
 // ---------------------------------------------------------------------------
@@ -395,6 +450,7 @@ export function waypointsOfType(route, type) {
 
 /**
  * Interpolates coordinate position along the track points for a target mileage.
+ * Uses fast binary search over cumulative distances array.
  * @param {Array<[number, number]>} trackPoints
  * @param {number} targetMile
  * @returns {[number, number] | null}
@@ -403,24 +459,38 @@ export function getCoordinatesAtMile(trackPoints, targetMile) {
   if (!trackPoints || trackPoints.length === 0) return null;
   if (targetMile <= 0) return trackPoints[0];
 
-  let cumulative = 0;
-  for (let i = 1; i < trackPoints.length; i++) {
-    const p1 = trackPoints[i - 1];
-    const p2 = trackPoints[i];
-    const d = haversineDistance(p1[0], p1[1], p2[0], p2[1]);
-    if (cumulative + d >= targetMile) {
-      const ratio = (targetMile - cumulative) / d;
-      const lat = p1[0] + (p2[0] - p1[0]) * ratio;
-      const lon = p1[1] + (p2[1] - p1[1]) * ratio;
-      return [lat, lon];
+  const distances = getOrCreateCumulativeDistances(trackPoints);
+  const total = trackPoints._totalDistance || distances[distances.length - 1] || 0;
+  if (targetMile >= total) return trackPoints[trackPoints.length - 1];
+
+  let low = 0;
+  let high = distances.length - 1;
+  let idx = distances.length - 1;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (distances[mid] >= targetMile) {
+      idx = mid;
+      high = mid - 1;
+    } else {
+      low = mid + 1;
     }
-    cumulative += d;
   }
-  return trackPoints[trackPoints.length - 1];
+
+  if (idx <= 0) return trackPoints[0];
+  const p1 = trackPoints[idx - 1];
+  const p2 = trackPoints[idx];
+  const d1 = distances[idx - 1];
+  const d2 = distances[idx];
+  const segLen = d2 - d1;
+  if (segLen <= 0) return p1;
+  const ratio = (targetMile - d1) / segLen;
+  const lat = p1[0] + (p2[0] - p1[0]) * ratio;
+  const lon = p1[1] + (p2[1] - p1[1]) * ratio;
+  return [lat, lon];
 }
 
 /**
- * Extracts a segment of track points between two mile marks.
+ * Extracts a segment of track points between two mile marks using binary search.
  * @param {Array<[number, number]>} trackPoints
  * @param {number} startMi
  * @param {number} endMi
@@ -428,38 +498,78 @@ export function getCoordinatesAtMile(trackPoints, targetMile) {
  */
 export function getTrackSegmentForMiles(trackPoints, startMi, endMi) {
   if (!trackPoints || trackPoints.length === 0) return [];
+  const distances = getOrCreateCumulativeDistances(trackPoints);
+  const total = trackPoints._totalDistance || distances[distances.length - 1] || 0;
 
-  const distances = [0];
-  let acc = 0;
-  for (let i = 1; i < trackPoints.length; i++) {
-    acc += haversineDistance(
-      trackPoints[i - 1][0],
-      trackPoints[i - 1][1],
-      trackPoints[i][0],
-      trackPoints[i][1],
-    );
-    distances.push(acc);
+  if (startMi <= 0 && endMi >= total) {
+    return trackPoints;
   }
 
   let startIdx = 0;
   let endIdx = trackPoints.length - 1;
-  let minStartDelta = Number.POSITIVE_INFINITY;
-  let minEndDelta = Number.POSITIVE_INFINITY;
 
-  for (let i = 0; i < distances.length; i++) {
-    const dStart = Math.abs(distances[i] - startMi);
-    if (dStart < minStartDelta) {
-      minStartDelta = dStart;
-      startIdx = i;
-    }
-    const dEnd = Math.abs(distances[i] - endMi);
-    if (dEnd < minEndDelta) {
-      minEndDelta = dEnd;
-      endIdx = i;
+  let low = 0;
+  let high = distances.length - 1;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (distances[mid] < startMi) {
+      low = mid + 1;
+    } else {
+      startIdx = mid;
+      high = mid - 1;
     }
   }
 
-  return trackPoints.slice(startIdx, endIdx + 1);
+  low = startIdx;
+  high = distances.length - 1;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (distances[mid] <= endMi) {
+      endIdx = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  return trackPoints.slice(startIdx, Math.min(trackPoints.length, endIdx + 1));
+}
+
+/**
+ * Calculates elevation gain and loss (in feet) for a segment of track points.
+ * Applies a 10ft noise filter threshold.
+ * @param {Array<[number, number, number]>} trackPoints
+ * @param {number} startMi
+ * @param {number} endMi
+ * @returns {{gainFt: number, lossFt: number}}
+ */
+export function calculateElevation(trackPoints, startMi, endMi) {
+  const segment = getTrackSegmentForMiles(trackPoints, startMi, endMi);
+  if (segment.length < 2) return { gainFt: 0, lossFt: 0 };
+
+  let gain = 0;
+  let loss = 0;
+  // Threshold to avoid accumulating micro-fluctuations (e.g., 3 meters ~ 10ft)
+  const THRESHOLD_M = 3;
+
+  let lastEle = segment[0][2] || 0;
+
+  for (let i = 1; i < segment.length; i++) {
+    const ele = segment[i][2] || 0;
+    const diff = ele - lastEle;
+
+    if (Math.abs(diff) > THRESHOLD_M) {
+      if (diff > 0) gain += diff;
+      else loss -= diff; // keep loss positive
+      lastEle = ele; // update only when we surpass threshold
+    }
+  }
+
+  // Convert meters to feet
+  return {
+    gainFt: Math.round(gain * 3.28084),
+    lossFt: Math.round(loss * 3.28084),
+  };
 }
 
 /**
@@ -629,4 +739,126 @@ export async function fetchOverpass(query) {
   }
 
   throw new Error(`All Overpass mirrors failed. Last error: ${lastError?.message}`);
+}
+
+/**
+ * Fetches elevation profile from Open-Topo-Data API if track points lack elevation data.
+ * @param {import('./gpx.js').RouteContext} route
+ * @returns {Promise<import('./gpx.js').RouteContext>}
+ */
+export async function fetchElevationFallback(route) {
+  if (!route || !route.trackPoints || route.trackPoints.length === 0) return route;
+
+  const hasElevation = route.trackPoints.some((pt) => pt[2] != null && pt[2] !== 0);
+  if (hasElevation) return route;
+
+  const total = route.trackPoints.length;
+  const step = Math.max(1, Math.floor(total / 80));
+  const sampledIndices = [];
+  for (let i = 0; i < total; i += step) {
+    sampledIndices.push(i);
+  }
+  if (sampledIndices[sampledIndices.length - 1] !== total - 1) {
+    sampledIndices.push(total - 1);
+  }
+
+  const locationsStr = sampledIndices
+    .map((idx) => `${route.trackPoints[idx][0].toFixed(5)},${route.trackPoints[idx][1].toFixed(5)}`)
+    .join('|');
+
+  const url = `https://api.opentopodata.org/v1/ned10m?locations=${locationsStr}`;
+
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) throw new Error(`Open-Topo-Data HTTP ${res.status}`);
+    const data = await res.json();
+    const results = data.results ?? [];
+
+    if (results.length > 0) {
+      let rIdx = 0;
+      for (let i = 0; i < total; i++) {
+        if (rIdx < results.length) {
+          const ele = results[rIdx].elevation ?? 0;
+          route.trackPoints[i][2] = ele;
+          if (sampledIndices[rIdx + 1] != null && i >= sampledIndices[rIdx + 1]) {
+            rIdx++;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[BPNav] Open-Topo-Data elevation fallback fetch failed:', err.message);
+  }
+
+  return route;
+}
+
+/**
+ * Generates sampled elevation profile data with slope gradients and pass summits.
+ * @param {import('./gpx.js').RouteContext} route
+ * @param {number} [numSamples=200]
+ * @returns {Array<{ distanceMi: number, elevationFt: number, gradePercent: number, gradeColor: string, isSummit: boolean, lat: number, lon: number }>}
+ */
+export function computeElevationProfileSamples(route, numSamples = 200) {
+  if (!route || !route.trackPoints || route.trackPoints.length < 2) return [];
+
+  const points = route.trackPoints;
+  const totalDist = route.totalDistanceMiles || 0;
+  if (totalDist <= 0) return [];
+
+  const cumDist = getOrCreateCumulativeDistances(points);
+
+  const step = totalDist / Math.max(10, numSamples);
+  const samples = [];
+
+  for (let d = 0; d <= totalDist; d += step) {
+    const targetMi = Math.min(totalDist, d);
+    let idx = 0;
+    while (idx < cumDist.length - 1 && cumDist[idx + 1] < targetMi) {
+      idx++;
+    }
+
+    const [lat, lon, eleMeters] = points[idx];
+    const eleFt = (eleMeters ?? 0) * 3.28084;
+
+    // Calculate grade percentage using previous sample
+    let grade = 0;
+    if (samples.length > 0) {
+      const prev = samples[samples.length - 1];
+      const distDeltaMiles = targetMi - prev.distanceMi;
+      const eleDeltaFeet = eleFt - prev.elevationFt;
+      if (distDeltaMiles > 0.001) {
+        grade = (eleDeltaFeet / (distDeltaMiles * 5280)) * 100;
+      }
+    }
+
+    let gradeColor = '#4caf50'; // Green (<5%)
+    if (Math.abs(grade) >= 10) {
+      gradeColor = '#f44336'; // Red (>10%)
+    } else if (Math.abs(grade) >= 5) {
+      gradeColor = '#ffeb3b'; // Yellow (5-9%)
+    }
+
+    samples.push({
+      distanceMi: Number(targetMi.toFixed(2)),
+      elevationFt: Math.round(eleFt),
+      gradePercent: Number(grade.toFixed(1)),
+      gradeColor,
+      isSummit: false,
+      lat,
+      lon,
+    });
+  }
+
+  // Identify local mountain pass summits (peaks higher than neighbors by >150ft)
+  for (let i = 2; i < samples.length - 2; i++) {
+    const curr = samples[i].elevationFt;
+    const prev2 = samples[i - 2].elevationFt;
+    const next2 = samples[i + 2].elevationFt;
+    if (curr > prev2 + 150 && curr > next2 + 150) {
+      samples[i].isSummit = true;
+    }
+  }
+
+  return samples;
 }

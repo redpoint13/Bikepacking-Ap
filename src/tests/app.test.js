@@ -1,3 +1,4 @@
+import 'fake-indexeddb/auto';
 /**
  * app.test.js — Unit tests for the root app renderer.
  *
