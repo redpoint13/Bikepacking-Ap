@@ -159,30 +159,29 @@ export function openSegmentDrawer(analytics, callbacks = {}) {
   // Comprehensive Markdown Summary for Clipboard
   const townLines =
     towns.length > 0
-      ? '\n### 🏙️ Towns & Services Passed\n' +
-        towns
+      ? `\n### 🏙️ Towns & Services Passed\n${towns
           .map(
             (t) =>
               `- **${t.name}** (Mile ${t.mile.toFixed(1)}${t.detourText}): ${t.description}`,
           )
-          .join('\n')
+          .join('\n')}`
       : '';
 
   const milestoneLines =
     milestones.length > 0
-      ? '\n### 📍 Key Milestones\n' +
-        milestones
+      ? `\n### 📍 Key Milestones\n${milestones
           .map(
             (m) =>
               `- Mile ${m.mile.toFixed(1)}: ${m.icon} ${m.name} (${m.detail || m.category})`,
           )
-          .join('\n')
+          .join('\n')}`
       : '';
 
   const tipLines =
     tips.length > 0
-      ? '\n### 💡 Trail Tips & Watchouts\n' +
-        tips.map((t) => `- **${t.icon} ${t.title}**: ${t.text}`).join('\n')
+      ? `\n### 💡 Trail Tips & Watchouts\n${tips
+          .map((t) => `- **${t.icon} ${t.title}**: ${t.text}`)
+          .join('\n')}`
       : '';
 
   const summaryMarkdown = `# Segment Analytics & Narrative (Mile ${Number(analytics.startMi).toFixed(1)} → ${Number(analytics.endMi).toFixed(1)})
