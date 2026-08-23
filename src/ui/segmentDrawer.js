@@ -49,8 +49,8 @@ export function openSegmentDrawer(analytics, callbacks = {}) {
   const foodCount = analytics.waypoints.resupplyPoints.length;
   const campCount = analytics.waypoints.campSpots.length;
 
-  const summaryMarkdown = `Segment Analytics (Mile ${analytics.startMi} -> ${analytics.endMi}):
-• Distance: ${analytics.distanceMi} mi (+${analytics.gainFt.toLocaleString()} ft / -${analytics.lossFt.toLocaleString()} ft, ${analytics.hillinessFtPerMi} ft/mi)
+  const summaryMarkdown = `Segment Analytics (Mile ${Number(analytics.startMi).toFixed(1)} -> ${Number(analytics.endMi).toFixed(1)}):
+• Distance: ${Number(analytics.distanceMi).toFixed(1)} mi (+${analytics.gainFt.toLocaleString()} ft / -${analytics.lossFt.toLocaleString()} ft, ${analytics.hillinessFtPerMi} ft/mi)
 • Difficulty: ${analytics.difficulty?.difficultyRating.label || 'Moderate'} (Score: ${analytics.difficulty?.difficultyScore})
 • Hike-a-Bike: ${analytics.difficulty?.hikeABike.distanceMi || 0} mi
 • Est. Moving Time: ${analytics.pacing.formattedMovingTime} (Elapsed: ${analytics.pacing.formattedElapsedTime})
@@ -62,9 +62,9 @@ export function openSegmentDrawer(analytics, callbacks = {}) {
     <div class="segment-drawer__content">
       <div class="segment-drawer__header">
         <div>
-          <h3 class="segment-drawer__title">Mile ${analytics.startMi} to Mile ${analytics.endMi} Segment</h3>
+          <h3 class="segment-drawer__title">Mile ${Number(analytics.startMi).toFixed(1)} to Mile ${Number(analytics.endMi).toFixed(1)} Segment</h3>
           <div style="display: flex; gap: 8px; align-items: center; margin-top: 4px;">
-            <span style="font-size: 13px; font-weight: 600;">${analytics.distanceMi} mi</span>
+            <span style="font-size: 13px; font-weight: 600;">${Number(analytics.distanceMi).toFixed(1)} mi</span>
             ${diffBadge}
           </div>
         </div>

@@ -246,7 +246,7 @@ function renderWaterCarry(stretches) {
         <li class="plan-row${alert}">
           <div class="plan-row__main">
             <span class="plan-row__span">${mapPanLink(s.fromName, s.fromMi)} → ${mapPanLink(s.toName, s.toMi)}</span>
-            <span class="plan-row__miles">${s.miles} mi</span>
+            <span class="plan-row__miles">${Number(s.miles).toFixed(1)} mi</span>
           </div>
           <div class="plan-row__sub">
             Carry ≈ ${oz(s.recommendedOz)} ${warn} ${campTag}
@@ -280,7 +280,7 @@ function renderFoodCarry(spans) {
         <span style="font-size: 11px; background: rgba(0,0,0,0.3); padding: 2px 8px; border-radius: 12px;">Pack at Start</span>
       </div>
       <div style="font-size: 12px; line-height: 1.5; margin-bottom: 8px;">
-        To reach your first resupply at <strong>${mapPanLink(startLeg.toName, startLeg.toMi)}</strong> (mile ${startLeg.toMi}, ${startLeg.miles} mi away / ${startLeg.daysFloat} days), start your ride with:
+        To reach your first resupply at <strong>${mapPanLink(startLeg.toName, startLeg.toMi)}</strong> (mile ${Number(startLeg.toMi).toFixed(1)}, ${Number(startLeg.miles).toFixed(1)} mi away / ${startLeg.daysFloat} days), start your ride with:
       </div>
       <div style="display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; font-weight: 600;">
         <span>🍽️ <strong>${startLeg.campMeals}</strong> camp meals</span>
@@ -305,7 +305,7 @@ function renderFoodCarry(spans) {
             <span class="plan-row__miles" style="font-variant-numeric: tabular-nums;">${s.miles} mi</span>
           </div>
           <div class="plan-row__sub" style="display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--md-sys-color-on-surface-variant); width: 100%; text-align: left;">
-            <div>📅 Carry duration: <strong>${s.daysFloat}</strong> days (${s.miles} mi)</div>
+            <div>📅 Carry duration: <strong>${s.daysFloat}</strong> days (${Number(s.miles).toFixed(1)} mi)</div>
             <div style="display: flex; gap: 12px; margin-top: 2px; flex-wrap: wrap;">
               <span>🍽️ <strong>${s.campMeals}</strong> meals</span>
               <span>🍫 <strong>${s.snacks}</strong> snacks</span>
@@ -376,13 +376,13 @@ function renderDayOption(kind, opt, isChosen, dayNum) {
     <div class="day-option${chosen}" data-action="select-day-camp" data-day="${dayNum}" data-target-kind="${kind.toLowerCase()}" data-id="${opt.campId}" style="cursor: pointer;">
       <div class="day-option__head" style="display: flex; justify-content: space-between; align-items: center;">
         <span class="day-option__kind">${kind} Day</span>
-        <span class="day-option__miles">${opt.miles} mi</span>
+        <span class="day-option__miles">${Number(opt.miles).toFixed(1)} mi</span>
       </div>
       <div style="margin-top: 2px;">${diffBadge}</div>
       <p class="day-option__camp" style="margin-top: 4px;">${mapPanLink(opt.campName, opt.endMi)}</p>
       ${amenitiesPills}
       <p class="day-option__meta" style="margin-top: 4px; display: flex; flex-direction: column; gap: 2px;">
-        <span style="font-weight: 500;">@ mile ${opt.endMi}</span>
+        <span style="font-weight: 500;">@ mile ${Number(opt.endMi).toFixed(1)}</span>
         <span style="font-size: 10px; opacity: 0.8;">📈 +${(opt.eleGainFt || 0).toLocaleString()} ft${hilliness} &nbsp;📉 -${(opt.eleLossFt || 0).toLocaleString()} ft</span>
         ${habPill}
         <span>💧 ${water}${waterLeg}</span>
@@ -511,7 +511,7 @@ function renderLogTable(log, activeStopIds = new Set()) {
 
       return `
         <tr${rowStyle}>
-          <td class="log-mi">${e.cumulativeMi}</td>
+          <td class="log-mi">${Number(e.cumulativeMi).toFixed(1)}</td>
           <td class="log-name">
             ${toggleBtn}
             ${mapPanLink(e.landmark, e.cumulativeMi)}

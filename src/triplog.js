@@ -71,7 +71,7 @@ export function isReliableWater(wp, threshold) {
 export function milesToNext(sortedWaypoints, fromMi, predicate, epsilon = 0.01) {
   for (const wp of sortedWaypoints) {
     if (wp.distanceFromStartMi > fromMi + epsilon && predicate(wp)) {
-      return Number((wp.distanceFromStartMi - fromMi).toFixed(2));
+      return Number((wp.distanceFromStartMi - fromMi).toFixed(1));
     }
   }
   return null;
@@ -108,7 +108,7 @@ export function milesToNext(sortedWaypoints, fromMi, predicate, epsilon = 0.01) 
  */
 export function buildResourceLog(route, opts = {}) {
   const threshold = opts.reliableWaterThreshold ?? DEFAULT_RELIABLE_WATER_THRESHOLD;
-  const total = Number((route.totalDistanceMiles ?? 0).toFixed(2));
+  const total = Number((route.totalDistanceMiles ?? 0).toFixed(1));
 
   // Resource waypoints only, ascending by distance, clamped to [0, total].
   const rawResources = [...route.waypoints]
@@ -139,7 +139,7 @@ export function buildResourceLog(route, opts = {}) {
 
   const rows = resources.map((wp) => ({
     id: wp.id,
-    cumulativeMi: Number(wp.distanceFromStartMi.toFixed(2)),
+    cumulativeMi: Number(wp.distanceFromStartMi.toFixed(1)),
     landmark: wp.name || logType(wp.type),
     type: logType(wp.type),
     elevationFt: wp.elevationFt ?? null,
