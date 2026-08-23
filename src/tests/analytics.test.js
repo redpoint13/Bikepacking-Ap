@@ -23,13 +23,33 @@ describe('analytics.js', () => {
         [34.2, -118.0, 1000],
       ],
       waypoints: [
-        { id: 'w1', name: 'Spring 1', type: 'water', distanceFromStartMi: 15, reliability: 90 },
-        { id: 'w2', name: 'Cottonwood General Store', type: 'resupply', distanceFromStartMi: 30, description: 'Town market and cafe' },
-        { id: 'w3', name: 'Camp 1', type: 'camping', distanceFromStartMi: 45 },
+        {
+          id: 'w1',
+          name: 'Spring 1',
+          type: 'water',
+          distanceFromStartMi: 15,
+          reliability: 90,
+        },
+        {
+          id: 'w2',
+          name: 'Cottonwood General Store',
+          type: 'resupply',
+          distanceFromStartMi: 30,
+          description: 'Town market and cafe',
+        },
+        {
+          id: 'w3',
+          name: 'Camp 1',
+          type: 'camping',
+          distanceFromStartMi: 45,
+        },
       ],
     };
 
-    const analytics = computeSegmentAnalytics(route, 0, 50, { paceMovingAvgMph: 10, ozPerMile: 5 });
+    const analytics = computeSegmentAnalytics(route, 0, 50, {
+      paceMovingAvgMph: 10,
+      ozPerMile: 5,
+    });
 
     expect(analytics.distanceMi).toBe(50);
     expect(analytics.gainFt).toBeGreaterThan(0);
@@ -55,7 +75,11 @@ describe('analytics.js', () => {
       lossFt: 1200,
       hillinessFtPerMi: 83,
       difficulty: {
-        difficultyRating: { label: 'Strenuous', cls: 'strenuous', badge: 'STRENUOUS' },
+        difficultyRating: {
+          label: 'Strenuous',
+          cls: 'strenuous',
+          badge: 'STRENUOUS',
+        },
         difficultyScore: 78,
         hikeABike: { distanceMi: 2.1, pitchCount: 3, percent: 7 },
       },
@@ -71,14 +95,38 @@ describe('analytics.js', () => {
       },
       waypoints: {
         all: [
-          { name: 'Sedona Red Rock Market', type: 'resupply', distanceFromStartMi: 18, offCourseDistanceMi: 0.2, description: 'Full grocery and water spigot' },
-          { name: 'Oak Creek Crossing', type: 'water', distanceFromStartMi: 22, reliability: 95, seasonalStatus: 'Perennial flow' },
+          {
+            name: 'Sedona Red Rock Market',
+            type: 'resupply',
+            distanceFromStartMi: 18,
+            offCourseDistanceMi: 0.2,
+            description: 'Full grocery and water spigot',
+          },
+          {
+            name: 'Oak Creek Crossing',
+            type: 'water',
+            distanceFromStartMi: 22,
+            reliability: 95,
+            seasonalStatus: 'Perennial flow',
+          },
         ],
         waterSources: [
-          { name: 'Oak Creek Crossing', type: 'water', distanceFromStartMi: 22, reliability: 95, seasonalStatus: 'Perennial flow' },
+          {
+            name: 'Oak Creek Crossing',
+            type: 'water',
+            distanceFromStartMi: 22,
+            reliability: 95,
+            seasonalStatus: 'Perennial flow',
+          },
         ],
         resupplyPoints: [
-          { name: 'Sedona Red Rock Market', type: 'resupply', distanceFromStartMi: 18, offCourseDistanceMi: 0.2, description: 'Full grocery and water spigot' },
+          {
+            name: 'Sedona Red Rock Market',
+            type: 'resupply',
+            distanceFromStartMi: 18,
+            offCourseDistanceMi: 0.2,
+            description: 'Full grocery and water spigot',
+          },
         ],
         campSpots: [],
       },
