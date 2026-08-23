@@ -139,7 +139,11 @@ export function openSegmentDrawer(analytics, callbacks = {}) {
             line-height: 1.4;
           ">
             <div style="font-weight: 700; margin-bottom: 2px; display: flex; align-items: center; gap: 6px; color: ${
-              tip.severity === 'warning' ? '#ffd54f' : tip.severity === 'tip' ? '#81d4fa' : 'inherit'
+              tip.severity === 'warning'
+                ? '#ffd54f'
+                : tip.severity === 'tip'
+                  ? '#81d4fa'
+                  : 'inherit'
             };">
               <span>${tip.icon}</span>
               <span>${tip.title}</span>
@@ -178,9 +182,7 @@ export function openSegmentDrawer(analytics, callbacks = {}) {
   const tipLines =
     tips.length > 0
       ? '\n### 💡 Trail Tips & Watchouts\n' +
-        tips
-          .map((t) => `- **${t.icon} ${t.title}**: ${t.text}`)
-          .join('\n')
+        tips.map((t) => `- **${t.icon} ${t.title}**: ${t.text}`).join('\n')
       : '';
 
   const summaryMarkdown = `# Segment Analytics & Narrative (Mile ${Number(analytics.startMi).toFixed(1)} → ${Number(analytics.endMi).toFixed(1)})
