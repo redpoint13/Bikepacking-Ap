@@ -631,6 +631,23 @@ function renderSegmentAnalyticsSection(route, options) {
           </div>
         </div>
 
+        ${
+          a.narrative?.summaryParagraph
+            ? `<div style="margin-top: 8px; background: rgba(255,255,255,0.03); border: 1px solid var(--md-sys-color-outline-variant); border-radius: 6px; padding: 8px 10px; font-size: 11px; line-height: 1.4; color: var(--md-sys-color-on-surface);">
+                 <strong>📖 Overview:</strong> ${a.narrative.summaryParagraph}
+               </div>`
+            : ''
+        }
+
+        ${
+          a.narrative?.townsAndServices?.length > 0
+            ? `<div style="margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+                 <span style="font-size: 10.5px; font-weight: 700; opacity: 0.8;">🏙️ Towns / Services:</span>
+                 ${a.narrative.townsAndServices.map((t) => `<span style="font-size: 10.5px; background: rgba(0, 82, 42, 0.35); border: 1px solid var(--md-sys-color-primary, #00522a); color: var(--md-sys-color-on-primary-container, #9af0ae); padding: 1px 6px; border-radius: 4px;">🛒 ${t.name} (mi ${t.mile.toFixed(1)})</span>`).join('')}
+               </div>`
+            : ''
+        }
+
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; margin-top: 10px; font-size: 11px;">
           <div style="background: rgba(255,255,255,0.02); padding: 6px 8px; border-radius: 6px; border: 1px solid var(--md-sys-color-outline-variant);">
             <span style="opacity: 0.7; font-size: 10px; display: block;">Distance / Ele</span>
