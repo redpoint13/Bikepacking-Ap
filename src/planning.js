@@ -1,3 +1,8 @@
+import {
+  generateStartChecklist,
+  generateStopChecklists,
+  getChecklistSummaryMarkdown,
+} from './checklist.js';
 /**
  * planning.js — Planning mode UI for Bikepacker Navigator.
  *
@@ -178,21 +183,28 @@ function renderControls(o) {
       <label class="plan-field plan-field--checkbox" style="grid-column: span 2; display: flex; align-items: center; gap: 8px; cursor: pointer;">
         <input class="plan-checkbox" type="checkbox" id="plan-optimize-water"
           ${o.optimizeWaterStops ? 'checked' : ''} />
-        <span class="plan-field__label" style="margin: 0; font-weight: 600;">Optimize Water Stops (Balance stops vs weight)</span>
+        <span class="plan-field__label" style="margin: 0; font-weight: 600;">Smart Water Refill Optimization (Skip intermediate sources)</span>
       </label>
-      <div class="plan-controls__sub" id="plan-optimize-details" style="grid-column: span 2; display: ${o.optimizeWaterStops ? 'flex' : 'none'}; gap: 16px; width: 100%; border-top: 1px dashed var(--md-sys-color-outline-variant); padding-top: 12px; margin-top: 4px;">
-        <label class="plan-field">
-          <span class="plan-field__label">Stop overhead</span>
+      <div class="plan-controls__sub" id="plan-optimize-details" style="grid-column: span 2; display: ${o.optimizeWaterStops ? 'flex' : 'none'}; flex-wrap: wrap; gap: 12px; width: 100%; border-top: 1px dashed var(--md-sys-color-outline-variant); padding-top: 12px; margin-top: 4px;">
+        <label class="plan-field" style="flex: 1 1 140px;">
+          <span class="plan-field__label">Target Refill Distance</span>
           <span class="plan-field__inputwrap">
-            <input class="plan-input" type="number" id="plan-stop-overhead" min="1" step="5"
-              value="${o.stopOverheadMinutes}" /> <span class="plan-field__unit">min</span>
+            <input class="plan-input" type="number" id="plan-target-water-interval" min="5" max="80" step="1"
+              value="${o.targetWaterIntervalMi ?? 20}" /> <span class="plan-field__unit">mi</span>
           </span>
         </label>
-        <label class="plan-field">
-          <span class="plan-field__label">Weight penalty</span>
+        <label class="plan-field" style="flex: 1 1 140px;">
+          <span class="plan-field__label">Safety Reserve Margin</span>
           <span class="plan-field__inputwrap">
-            <input class="plan-input" type="number" id="plan-weight-penalty" min="0.01" max="1" step="0.05"
-              value="${o.waterWeightPenalty}" /> <span class="plan-field__unit">cost</span>
+            <input class="plan-input" type="number" id="plan-water-safety-margin" min="5" max="50" step="5"
+              value="${o.waterSafetyMarginPercent ?? 20}" /> <span class="plan-field__unit">%</span>
+          </span>
+        </label>
+        <label class="plan-field" style="flex: 1 1 140px;">
+          <span class="plan-field__label">Camp Water Reserve</span>
+          <span class="plan-field__inputwrap">
+            <input class="plan-input" type="number" id="plan-camp-water-reserve" min="0" max="150" step="10"
+              value="${o.campWaterReserveOz ?? 40}" /> <span class="plan-field__unit">oz</span>
           </span>
         </label>
       </div>
@@ -227,6 +239,9 @@ function renderWaterCarry(stretches) {
     .map((s) => {
       const alert = s.exceedsCapacity ? ' plan-row--alert' : '';
       const warn = s.exceedsCapacity ? `<span class="plan-flag">over capacity</span>` : '';
+      const campTag = s.isCampRefill
+        ? `<span style="background: rgba(41, 182, 246, 0.18); color: #29b6f6; border-radius: 4px; padding: 2px 6px; font-size: 10px; font-weight: 700; margin-left: 6px;">⛺ Camp Refill (+${planOptions.campWaterReserveOz ?? 40} oz)</span>`
+        : '';
       return `
         <li class="plan-row${alert}">
           <div class="plan-row__main">
@@ -234,7 +249,7 @@ function renderWaterCarry(stretches) {
             <span class="plan-row__miles">${s.miles} mi</span>
           </div>
           <div class="plan-row__sub">
-            Carry ≈ ${oz(s.recommendedOz)} ${warn}
+            Carry ≈ ${oz(s.recommendedOz)} ${warn} ${campTag}
           </div>
         </li>`;
     })
@@ -317,7 +332,7 @@ function renderDayOption(kind, opt, isChosen, dayNum) {
     opt.nextFoodMi == null
       ? 'none ahead'
       : `${opt.nextFoodMi} mi to ${opt.nextFoodName || 'resupply'}`;
-      
+
   const waterLeg = opt.waterOptions > 0 ? ` · 💧 ${opt.waterOptions} on leg` : '';
   const foodLeg = opt.resupplyOptions > 0 ? ` · 🛒 ${opt.resupplyOptions} on leg` : '';
 
@@ -325,11 +340,37 @@ function renderDayOption(kind, opt, isChosen, dayNum) {
     ? `<span class="difficulty-chip difficulty-chip--${opt.difficulty.difficultyRating.cls}" style="font-size: 10px; padding: 1px 6px; border-radius: 4px; font-weight: 700;">${opt.difficulty.difficultyRating.badge} (${opt.difficulty.difficultyScore})</span>`
     : '';
 
-  const habPill = opt.difficulty && opt.difficulty.hikeABike && opt.difficulty.hikeABike.distanceMi > 0
-    ? `<span style="color: var(--md-sys-color-tertiary, #f4b400); font-weight: 700; font-size: 10px;">⚠️ HAB: ${opt.difficulty.hikeABike.distanceMi} mi (${opt.difficulty.hikeABike.pitchCount} pitches ≥15%)</span>`
-    : '';
+  const habPill =
+    opt.difficulty && opt.difficulty.hikeABike && opt.difficulty.hikeABike.distanceMi > 0
+      ? `<span style="color: var(--md-sys-color-tertiary, #f4b400); font-weight: 700; font-size: 10px;">⚠️ HAB: ${opt.difficulty.hikeABike.distanceMi} mi (${opt.difficulty.hikeABike.pitchCount} pitches ≥15%)</span>`
+      : '';
 
   const hilliness = opt.difficulty ? ` (${opt.difficulty.hillinessFtPerMi} ft/mi)` : '';
+
+  const campWaterChip = opt.waterAvailable
+    ? opt.waterAvailable === 'potable' ||
+      opt.waterAvailable === true ||
+      opt.waterAvailable === 'yes'
+      ? `<span style="font-size: 10px; color: #81c784; font-weight: 600;">💧 Potable Water</span>`
+      : opt.waterAvailable === 'natural' || opt.waterAvailable === 'stream'
+        ? `<span style="font-size: 10px; color: #4fc3f7; font-weight: 600;">💧 Stream / Filter</span>`
+        : opt.waterAvailable === 'none' ||
+            opt.waterAvailable === false ||
+            opt.waterAvailable === 'no'
+          ? `<span style="font-size: 10px; color: #ffb74d; font-weight: 600;">🚫 Dry Camp</span>`
+          : ''
+    : '';
+
+  const campFeeChip = opt.fee
+    ? String(opt.fee).toLowerCase() === 'free'
+      ? `<span style="font-size: 10px; color: #a5d6a7; font-weight: 600;">🆓 Free</span>`
+      : `<span style="font-size: 10px; color: #ce93d8; font-weight: 600;">💲 ${opt.fee}</span>`
+    : '';
+
+  const amenitiesPills =
+    campWaterChip || campFeeChip
+      ? `<div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px;">${campWaterChip}${campFeeChip}</div>`
+      : '';
 
   return `
     <div class="day-option${chosen}" data-action="select-day-camp" data-day="${dayNum}" data-target-kind="${kind.toLowerCase()}" data-id="${opt.campId}" style="cursor: pointer;">
@@ -339,6 +380,7 @@ function renderDayOption(kind, opt, isChosen, dayNum) {
       </div>
       <div style="margin-top: 2px;">${diffBadge}</div>
       <p class="day-option__camp" style="margin-top: 4px;">${mapPanLink(opt.campName, opt.endMi)}</p>
+      ${amenitiesPills}
       <p class="day-option__meta" style="margin-top: 4px; display: flex; flex-direction: column; gap: 2px;">
         <span style="font-weight: 500;">@ mile ${opt.endMi}</span>
         <span style="font-size: 10px; opacity: 0.8;">📈 +${(opt.eleGainFt || 0).toLocaleString()} ft${hilliness} &nbsp;📉 -${(opt.eleLossFt || 0).toLocaleString()} ft</span>
@@ -399,7 +441,8 @@ function renderLogTable(log, activeStopIds = new Set()) {
         const catBadges = {
           grocery: '<span class="resupply-tier-badge resupply-tier-grocery">🛒 Grocery</span>',
           cstore: '<span class="resupply-tier-badge resupply-tier-cstore">⛽ Gas/C-Store</span>',
-          restaurant: '<span class="resupply-tier-badge resupply-tier-restaurant">🍽️ Restaurant</span>',
+          restaurant:
+            '<span class="resupply-tier-badge resupply-tier-restaurant">🍽️ Restaurant</span>',
           none: '<span class="resupply-tier-badge resupply-tier-none">No Resupply</span>',
         };
         resupplyBadge = catBadges[cat] || catBadges.cstore;
@@ -645,7 +688,9 @@ function repaint(root) {
     reliableWaterThreshold: planOptions.reliableWaterThreshold,
   });
 
-  const routeDiff = calculateRouteDifficulty(planRoute, { surfaceFactor: planOptions.surfaceFactor });
+  const routeDiff = calculateRouteDifficulty(planRoute, {
+    surfaceFactor: planOptions.surfaceFactor,
+  });
 
   // Extract the set of active water stops for popup and log rendering
   const activeStopIds = getActiveStopIds(planRoute, planOptions);
@@ -656,11 +701,14 @@ function repaint(root) {
     ? `<span class="difficulty-chip difficulty-chip--${routeDiff.difficultyRating.cls}" style="font-weight: 700; padding: 4px 10px; border-radius: 6px; font-size: 11px;">${routeDiff.difficultyRating.badge} (Score: ${routeDiff.difficultyScore})</span>`
     : '';
 
-  const habText = routeDiff && routeDiff.hikeABike.distanceMi > 0
-    ? `<span style="color: var(--md-sys-color-tertiary, #f4b400); font-weight: 700;">⚠️ ${routeDiff.hikeABike.distanceMi} mi HAB (${routeDiff.hikeABike.percent}% · ${routeDiff.hikeABike.pitchCount} pitches ≥15%)</span>`
-    : `<span style="color: var(--md-sys-color-primary, #78dc95); font-weight: 600;">🟢 Minimal Hike-a-Bike</span>`;
+  const habText =
+    routeDiff && routeDiff.hikeABike.distanceMi > 0
+      ? `<span style="color: var(--md-sys-color-tertiary, #f4b400); font-weight: 700;">⚠️ ${routeDiff.hikeABike.distanceMi} mi HAB (${routeDiff.hikeABike.percent}% · ${routeDiff.hikeABike.pitchCount} pitches ≥15%)</span>`
+      : `<span style="color: var(--md-sys-color-primary, #78dc95); font-weight: 600;">🟢 Minimal Hike-a-Bike</span>`;
 
-  const hillinessText = routeDiff ? `🏔️ Elevation Density: <strong>${routeDiff.hillinessFtPerMi} ft/mi</strong>` : '';
+  const hillinessText = routeDiff
+    ? `🏔️ Elevation Density: <strong>${routeDiff.hillinessFtPerMi} ft/mi</strong>`
+    : '';
 
   root.querySelector('#plan-summary').innerHTML = `
     <div style="display: flex; flex-direction: column; gap: 10px; width: 100%;">
@@ -672,7 +720,22 @@ function repaint(root) {
           <span class="plan-stat"><strong>${plan.foodCarry.length}</strong> food legs</span>
           ${diffBadge}
         </div>
-        <div style="display: flex; gap: 8px;">
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button class="plan-library-btn" data-action="open-library" style="
+            background-color: var(--md-sys-color-surface-container-high, #2a312d);
+            color: var(--md-sys-color-on-surface, #e1e3df);
+            border: 1px solid var(--md-sys-color-outline-variant);
+            border-radius: 100px;
+            padding: 6px 14px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+          ">
+            📁 Change Route
+          </button>
           <button class="plan-import-btn" data-action="import-plan" style="
             background-color: var(--md-sys-color-secondary-container, #e8f5e9);
             color: var(--md-sys-color-on-secondary-container, #1b5e20);
@@ -716,6 +779,11 @@ function repaint(root) {
   root.querySelector('#plan-food').innerHTML = renderFoodCarry(plan.foodCarry);
   root.querySelector('#plan-days').innerHTML = renderDayPlan(plan.dayPlan);
   root.querySelector('#plan-log').innerHTML = renderLogTable(log, activeStopIds);
+  const checklistsEl = root.querySelector('#plan-checklists');
+  if (checklistsEl) {
+    checklistsEl.innerHTML = renderChecklists(planRoute, plan);
+    wireChecklistInteractions(root, planRoute, plan);
+  }
   const analyticsEl = root.querySelector('#plan-analytics');
   if (analyticsEl) {
     analyticsEl.innerHTML = renderSegmentAnalyticsSection(planRoute, planOptions);
@@ -756,6 +824,12 @@ function syncOptionsAndRepaint(root) {
     maxDetourMi: read('#plan-detour', PLAN_DEFAULTS.maxDetourMi),
     surfaceFactor,
     optimizeWaterStops,
+    targetWaterIntervalMi: read('#plan-target-water-interval', PLAN_DEFAULTS.targetWaterIntervalMi),
+    waterSafetyMarginPercent: read(
+      '#plan-water-safety-margin',
+      PLAN_DEFAULTS.waterSafetyMarginPercent,
+    ),
+    campWaterReserveOz: read('#plan-camp-water-reserve', PLAN_DEFAULTS.campWaterReserveOz),
     stopOverheadMinutes: read('#plan-stop-overhead', PLAN_DEFAULTS.stopOverheadMinutes),
     waterWeightPenalty: read('#plan-weight-penalty', PLAN_DEFAULTS.waterWeightPenalty),
   };
@@ -791,6 +865,7 @@ export function renderPlanningView(root, route, options = null) {
         <button class="plan-tab-btn" data-tab="food" style="flex: 1; padding: 10px; background: none; border: none; border-bottom: 3px solid transparent; font-weight: 600; cursor: pointer; color: var(--md-sys-color-on-surface-variant); font-size: 12px;">🛒 Food</button>
         <button class="plan-tab-btn" data-tab="camps" style="flex: 1; padding: 10px; background: none; border: none; border-bottom: 3px solid transparent; font-weight: 600; cursor: pointer; color: var(--md-sys-color-on-surface-variant); font-size: 12px;">⛺ Camps</button>
         <button class="plan-tab-btn" data-tab="analytics" style="flex: 1; padding: 10px; background: none; border: none; border-bottom: 3px solid transparent; font-weight: 600; cursor: pointer; color: var(--md-sys-color-on-surface-variant); font-size: 12px;">📊 Analytics</button>
+        <button class="plan-tab-btn" data-tab="checklists" style="flex: 1; padding: 10px; background: none; border: none; border-bottom: 3px solid transparent; font-weight: 600; cursor: pointer; color: var(--md-sys-color-on-surface-variant); font-size: 12px;">🎒 Checklists</button>
         <button class="plan-tab-btn" data-tab="log" style="flex: 1; padding: 10px; background: none; border: none; border-bottom: 3px solid transparent; font-weight: 600; cursor: pointer; color: var(--md-sys-color-on-surface-variant); font-size: 12px;">📋 Log</button>
         <button class="plan-tab-btn" data-tab="research" style="flex: 1; padding: 10px; background: none; border: none; border-bottom: 3px solid transparent; font-weight: 600; cursor: pointer; color: var(--md-sys-color-on-surface-variant); font-size: 12px;">🔍 Research</button>
       </div>
@@ -809,6 +884,9 @@ export function renderPlanningView(root, route, options = null) {
       </div>
       <div class="plan-tab-content" id="tab-analytics" style="display: none;">
         <div id="plan-analytics"></div>
+      </div>
+      <div class="plan-tab-content" id="tab-checklists" style="display: none;">
+        <div id="plan-checklists"></div>
       </div>
       <div class="plan-tab-content" id="tab-log" style="display: none;">
         <h3 class="section-heading" style="margin-top: 8px;">Resource log</h3>
@@ -880,7 +958,13 @@ export function renderPlanningView(root, route, options = null) {
   `;
 
   const controls = root.querySelector('#plan-controls');
-  controls.addEventListener('input', () => syncOptionsAndRepaint(root));
+  let debounceTimer = null;
+  const debouncedSync = () => {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => syncOptionsAndRepaint(root), 100);
+  };
+  controls.addEventListener('input', debouncedSync);
+  controls.addEventListener('change', () => syncOptionsAndRepaint(root));
 
   const voiceToggle = root.querySelector('#plan-voice-toggle');
   const readSummaryBtn = root.querySelector('#plan-read-summary-btn');
@@ -966,7 +1050,8 @@ export function renderPlanningView(root, route, options = null) {
       if (id) {
         const userStates = { ...(planOptions.userStopStates || {}) };
         const current = userStates[id] || 'optional';
-        const next = current === 'optional' ? 'planned' : current === 'planned' ? 'skipped' : 'optional';
+        const next =
+          current === 'optional' ? 'planned' : current === 'planned' ? 'skipped' : 'optional';
         userStates[id] = next;
         planOptions.userStopStates = userStates;
         localStorage.setItem(`bpnav-stop-state-${id}`, next);
@@ -995,6 +1080,9 @@ export function renderPlanningView(root, route, options = null) {
       const endMi = Number(drawerBtn.getAttribute('data-end'));
       if (planRoute && Number.isFinite(startMi) && Number.isFinite(endMi)) {
         const analytics = computeSegmentAnalytics(planRoute, startMi, endMi, planOptions);
+        window.dispatchEvent(
+          new CustomEvent('bpnav-highlight-segment', { detail: { startMi, endMi } }),
+        );
         openSegmentDrawer(analytics, {
           onHighlightMap: (sMi, eMi) => {
             window.dispatchEvent(
@@ -1100,4 +1188,191 @@ export function renderOSMSearchResults(results, keyword) {
     .join('');
 
   return `<ul class="plan-list" style="list-style: none; padding: 0; margin: 0; width: 100%;">${rows}</ul>`;
+}
+
+/**
+ * Renders the interactive Start of Ride and Stop-by-Stop Packing Checklists.
+ * @param {import('./gpx.js').RouteContext} route
+ * @param {ReturnType<typeof buildPlan>} plan
+ * @returns {string}
+ */
+export function renderChecklists(route, plan) {
+  if (!route || !plan) {
+    return '<p class="plan-empty">Load a route to generate packing and stop checklists.</p>';
+  }
+
+  const startChecklist = generateStartChecklist(route, plan);
+  const stopChecklists = generateStopChecklists(route, plan);
+
+  let totalItems = 0;
+  for (const cat of startChecklist) totalItems += cat.items.length;
+  for (const stop of stopChecklists) totalItems += stop.items.length;
+
+  const startCardsHtml = startChecklist
+    .map((cat) => {
+      const itemsHtml = cat.items
+        .map(
+          (item) => `
+          <label class="checklist-item" style="display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; cursor: pointer; text-align: left;">
+            <input type="checkbox" class="checklist-checkbox" data-id="${item.id}" style="margin-top: 3px; cursor: pointer; accent-color: var(--md-sys-color-primary);" />
+            <div style="display: flex; flex-direction: column; gap: 2px;">
+              <span class="checklist-label" style="font-size: 12px; font-weight: 500; color: var(--md-sys-color-on-surface);">${item.label}</span>
+              ${item.detail ? `<span style="font-size: 10px; color: var(--md-sys-color-on-surface-variant); opacity: 0.85;">${item.detail}</span>` : ''}
+            </div>
+          </label>`,
+        )
+        .join('');
+
+      return `
+        <div class="checklist-category-card" style="background: rgba(255,255,255,0.02); border: 1px solid var(--md-sys-color-outline-variant); border-radius: 8px; padding: 12px; margin-bottom: 10px;">
+          <h4 style="margin: 0 0 10px 0; font-size: 13px; color: var(--md-sys-color-primary); font-weight: 700;">${cat.title}</h4>
+          <div class="checklist-items">${itemsHtml}</div>
+        </div>`;
+    })
+    .join('');
+
+  const stopCardsHtml = stopChecklists
+    .map((stop) => {
+      const typeBg =
+        stop.type === 'water'
+          ? 'color-mix(in srgb, #29b6f6 15%, transparent)'
+          : stop.type === 'resupply'
+            ? 'color-mix(in srgb, #ff9800 15%, transparent)'
+            : stop.type === 'camping'
+              ? 'color-mix(in srgb, #4caf50 15%, transparent)'
+              : 'color-mix(in srgb, var(--md-sys-color-primary) 15%, transparent)';
+
+      const typeColor =
+        stop.type === 'water'
+          ? '#4fc3f7'
+          : stop.type === 'resupply'
+            ? '#ffb74d'
+            : stop.type === 'camping'
+              ? '#81c784'
+              : 'var(--md-sys-color-primary)';
+
+      const itemsHtml = stop.items
+        .map(
+          (item) => `
+          <label class="checklist-item" style="display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; cursor: pointer; text-align: left;">
+            <input type="checkbox" class="checklist-checkbox" data-id="${item.id}" style="margin-top: 3px; cursor: pointer; accent-color: var(--md-sys-color-primary);" />
+            <div style="display: flex; flex-direction: column; gap: 2px;">
+              <span class="checklist-label" style="font-size: 12px; font-weight: 500; color: var(--md-sys-color-on-surface);">${item.label}</span>
+              ${item.detail ? `<span style="font-size: 10px; color: var(--md-sys-color-on-surface-variant); opacity: 0.85;">${item.detail}</span>` : ''}
+            </div>
+          </label>`,
+        )
+        .join('');
+
+      return `
+        <div class="checklist-stop-card" style="background: rgba(255,255,255,0.02); border: 1px solid var(--md-sys-color-outline-variant); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 6px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="background: ${typeBg}; color: ${typeColor}; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;">${stop.badge}</span>
+              <span style="font-size: 13px; font-weight: 700; color: var(--md-sys-color-on-surface);">${mapPanLink(stop.name, stop.mile)}</span>
+            </div>
+            <span style="font-size: 11px; font-weight: 600; color: var(--md-sys-color-on-surface-variant);">Mile ${stop.mile.toFixed(1)}</span>
+          </div>
+          <div class="checklist-items">${itemsHtml}</div>
+        </div>`;
+    })
+    .join('');
+
+  return `
+    <div class="checklist-section" style="width: 100%; text-align: left;">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;">
+        <div>
+          <h3 class="section-heading" style="margin: 0;">Packing & Stop Checklists</h3>
+          <p style="margin: 2px 0 0 0; font-size: 11px; color: var(--md-sys-color-on-surface-variant);">
+            Action items and logistics calculated specifically for your route stops.
+          </p>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button id="btn-copy-checklists" class="plan-btn" style="
+            background-color: var(--md-sys-color-surface-container-high, #242427);
+            color: var(--md-sys-color-on-surface, #ffffff);
+            border: 1px solid var(--md-sys-color-outline-variant, #46444a);
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+          ">
+            📋 Copy Markdown
+          </button>
+          <button id="btn-reset-checklists" class="plan-btn" style="
+            background: none;
+            color: var(--md-sys-color-on-surface-variant);
+            border: 1px solid var(--md-sys-color-outline-variant, #46444a);
+            border-radius: 6px;
+            padding: 6px 10px;
+            font-size: 11px;
+            cursor: pointer;
+          ">
+            🔄 Reset
+          </button>
+        </div>
+      </div>
+
+      <div style="margin-bottom: 16px;">
+        <h4 style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--md-sys-color-on-surface-variant); margin: 0 0 8px 0;">
+          🚀 Departure: Start of Ride Base Packing
+        </h4>
+        ${startCardsHtml}
+      </div>
+
+      <div>
+        <h4 style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--md-sys-color-on-surface-variant); margin: 0 0 8px 0;">
+          📍 Stop-by-Stop Route Checklists
+        </h4>
+        ${stopCardsHtml}
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Wires copy button and checklist checkbox change handlers.
+ * @param {HTMLElement} root
+ * @param {import('./gpx.js').RouteContext} route
+ * @param {ReturnType<typeof buildPlan>} plan
+ */
+function wireChecklistInteractions(root, route, plan) {
+  const copyBtn = root.querySelector('#btn-copy-checklists');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', () => {
+      const startChecklist = generateStartChecklist(route, plan);
+      const stopChecklists = generateStopChecklists(route, plan);
+      const md = getChecklistSummaryMarkdown(startChecklist, stopChecklists);
+      navigator.clipboard.writeText(md);
+      copyBtn.textContent = '✅ Copied!';
+      setTimeout(() => {
+        if (copyBtn) copyBtn.textContent = '📋 Copy Markdown';
+      }, 2000);
+    });
+  }
+
+  const resetBtn = root.querySelector('#btn-reset-checklists');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+      root.querySelectorAll('.checklist-checkbox').forEach((cb) => {
+        cb.checked = false;
+        const label = cb.closest('.checklist-item')?.querySelector('.checklist-label');
+        if (label) label.style.textDecoration = 'none';
+      });
+    });
+  }
+
+  root.querySelectorAll('.checklist-checkbox').forEach((cb) => {
+    cb.addEventListener('change', () => {
+      const label = cb.closest('.checklist-item')?.querySelector('.checklist-label');
+      if (label) {
+        label.style.textDecoration = cb.checked ? 'line-through' : 'none';
+        label.style.opacity = cb.checked ? '0.6' : '1';
+      }
+    });
+  });
 }

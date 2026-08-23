@@ -159,6 +159,34 @@ export function renderElevationProfile(container, route, onHover = null) {
       tooltip.style.display = 'none';
       if (onHover) onHover(null);
     });
+
+    svg.addEventListener('click', (e) => {
+      const rect = svg.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const svgX = (mouseX / rect.width) * width;
+
+      if (svgX >= padding.left && svgX <= width - padding.right) {
+        const ratio = (svgX - padding.left) / chartW;
+        const targetMi = ratio * totalMi;
+
+        let closest = samples[0];
+        let minDist = Infinity;
+        for (const s of samples) {
+          const d = Math.abs(s.distanceMi - targetMi);
+          if (d < minDist) {
+            minDist = d;
+            closest = s;
+          }
+        }
+
+        window.dispatchEvent(
+          new CustomEvent('bpnav-profile-click', {
+            detail: { sample: closest, mile: closest.distanceMi, elevationFt: closest.elevationFt },
+          }),
+        );
+        // click dispatched via bpnav-profile-click
+      }
+    });
   }
 }
 
@@ -205,4 +233,3 @@ export function highlightProfileSegment(container, route, startMi, endMi) {
 
   svg.insertBefore(rect, svg.firstChild);
 }
-

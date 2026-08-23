@@ -18,7 +18,7 @@ export async function syncOfflineMap(route, onProgress) {
   const styleAssets = [
     'https://tiles.openfreemap.org/styles/liberty',
     'https://tiles.openfreemap.org/sprites/ofm_f384/ofm.json',
-    'https://tiles.openfreemap.org/sprites/ofm_f384/ofm.png'
+    'https://tiles.openfreemap.org/sprites/ofm_f384/ofm.png',
   ];
 
   // MapLibre glyphs (fonts) we might need for typical names.
@@ -42,10 +42,10 @@ export async function syncOfflineMap(route, onProgress) {
 
   // 2. Fetch all vector tiles in small batches to avoid exhausting connections
   const BATCH_SIZE = 10;
-  
+
   for (let i = 0; i < tiles.length; i += BATCH_SIZE) {
     const batch = tiles.slice(i, i + BATCH_SIZE);
-    
+
     await Promise.all(
       batch.map(async ([z, x, y]) => {
         const url = `https://tiles.openfreemap.org/planet/${z}/${x}/${y}.pbf`;
@@ -55,9 +55,9 @@ export async function syncOfflineMap(route, onProgress) {
         } catch (e) {
           console.warn('Failed to fetch tile:', url, e);
         }
-      })
+      }),
     );
-    
+
     currentAssets += batch.length;
     onProgress(currentAssets, totalAssets);
   }

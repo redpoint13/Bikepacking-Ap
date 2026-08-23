@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { calculateSegmentDifficulty, calculateRouteDifficulty, SURFACE_FACTORS } from '../difficulty.js';
+import {
+  calculateSegmentDifficulty,
+  calculateRouteDifficulty,
+  SURFACE_FACTORS,
+} from '../difficulty.js';
 
 describe('difficulty.js', () => {
   it('handles empty or small track point arrays gracefully', () => {
@@ -14,7 +18,7 @@ describe('difficulty.js', () => {
     // 2 points ~ 10 miles apart at 0 elevation
     const trackPoints = [
       [34.0522, -118.2437, 100],
-      [34.1950, -118.2437, 100],
+      [34.195, -118.2437, 100],
     ];
     const res = calculateSegmentDifficulty(trackPoints, 0, 20);
     expect(res.distanceMi).toBeGreaterThan(5);
@@ -35,7 +39,10 @@ describe('difficulty.js', () => {
       trackPoints.push([lat, lon, eleMeters]);
     }
 
-    const res = calculateSegmentDifficulty(trackPoints, 0, 50, { surfaceFactor: 1.6, habGradeThreshold: 15 });
+    const res = calculateSegmentDifficulty(trackPoints, 0, 50, {
+      surfaceFactor: 1.6,
+      habGradeThreshold: 15,
+    });
     expect(res.gainFt).toBeGreaterThan(1000);
     expect(res.hillinessFtPerMi).toBeGreaterThan(50);
     expect(res.hikeABike.pitchCount).toBeGreaterThan(0);

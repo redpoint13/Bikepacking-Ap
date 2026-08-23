@@ -119,19 +119,56 @@ export function computeRouteDistance(points) {
 }
 
 /**
+ * Cached helper to get or compute the cumulative along-track distance array.
+ * @param {Array<[number, number]>} trackPoints
+ * @returns {Float64Array}
+ */
+export function getOrCreateCumulativeDistances(trackPoints) {
+  if (!trackPoints || trackPoints.length === 0) return new Float64Array(0);
+  if (
+    trackPoints._cumulativeDistances &&
+    trackPoints._cumulativeDistances.length === trackPoints.length
+  ) {
+    return trackPoints._cumulativeDistances;
+  }
+  const distances = new Float64Array(trackPoints.length);
+  let acc = 0;
+  distances[0] = 0;
+  for (let i = 1; i < trackPoints.length; i++) {
+    acc += haversineDistance(
+      trackPoints[i - 1][0],
+      trackPoints[i - 1][1],
+      trackPoints[i][0],
+      trackPoints[i][1],
+    );
+    distances[i] = acc;
+  }
+  trackPoints._cumulativeDistances = distances;
+  trackPoints._totalDistance = acc;
+  return distances;
+}
+
+/**
  * Finds the index of the track point closest to a given lat/lon.
+ * Uses fast equirectangular projection distance squared for high performance.
  * @param {number} lat
  * @param {number} lon
  * @param {Array<[number, number]>} trackPoints
  * @returns {number} Index into trackPoints
  */
 export function nearestTrackPointIndex(lat, lon, trackPoints) {
+  if (!trackPoints || trackPoints.length === 0) return 0;
   let nearestIdx = 0;
-  let nearestDist = Number.POSITIVE_INFINITY;
+  let nearestDistSq = Number.POSITIVE_INFINITY;
+  const cosLat = Math.cos((lat * Math.PI) / 180);
+
   for (let i = 0; i < trackPoints.length; i++) {
-    const d = haversineDistance(lat, lon, trackPoints[i][0], trackPoints[i][1]);
-    if (d < nearestDist) {
-      nearestDist = d;
+    const pt = trackPoints[i];
+    const dLat = pt[0] - lat;
+    const dLon = (pt[1] - lon) * cosLat;
+    const distSq = dLat * dLat + dLon * dLon;
+    if (distSq < nearestDistSq) {
+      nearestDistSq = distSq;
       nearestIdx = i;
     }
   }
@@ -140,15 +177,17 @@ export function nearestTrackPointIndex(lat, lon, trackPoints) {
 
 /**
  * Calculates the along-track distance from the route start to a waypoint.
- * Finds the nearest track point, then sums segment lengths to that index.
+ * Finds the nearest track point, then returns the cumulative distance in O(1).
  * @param {number} lat
  * @param {number} lon
  * @param {Array<[number, number]>} trackPoints
  * @returns {number} Distance in miles from route start
  */
 export function distanceFromStart(lat, lon, trackPoints) {
+  if (!trackPoints || trackPoints.length === 0) return 0;
   const idx = nearestTrackPointIndex(lat, lon, trackPoints);
-  return computeRouteDistance(trackPoints.slice(0, idx + 1));
+  const distances = getOrCreateCumulativeDistances(trackPoints);
+  return distances[idx] ?? 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -271,6 +310,11 @@ export function parseGPX(xmlString) {
     if (lon > maxLon) maxLon = lon;
   }
 
+  // --- Precalculate cumulative distances for O(1) waypoint distance lookup ---
+  const cumDistances = getOrCreateCumulativeDistances(trackPoints);
+  const totalDistanceMiles =
+    trackPoints._totalDistance || cumDistances[cumDistances.length - 1] || 0;
+
   // --- Waypoints ---
   const wptEls = doc.getElementsByTagName('wpt');
   const waypoints = [];
@@ -286,7 +330,7 @@ export function parseGPX(xmlString) {
     const type = classifyWaypoint(wptName, description);
     const reliability = defaultReliability(type, wptName);
     const nearestIdx = nearestTrackPointIndex(lat, lon, trackPoints);
-    const distanceFromStartMi = computeRouteDistance(trackPoints.slice(0, nearestIdx + 1));
+    const distanceFromStartMi = cumDistances[nearestIdx] ?? 0;
     const nearestPt = trackPoints[nearestIdx];
     const offCourseDistanceMi = haversineDistance(lat, lon, nearestPt[0], nearestPt[1]);
 
@@ -304,8 +348,6 @@ export function parseGPX(xmlString) {
   }
 
   waypoints.sort((a, b) => a.distanceFromStartMi - b.distanceFromStartMi);
-
-  const totalDistanceMiles = computeRouteDistance(trackPoints);
   const startPoint = { lat: trackPoints[0][0], lon: trackPoints[0][1] };
 
   // Detect loop: start and end within 1 mile
@@ -330,8 +372,8 @@ export function parseGPX(xmlString) {
     metadata: {
       forcedWaterIds: [],
       forcedResupplyIds: [],
-      forcedCampIds: []
-    }
+      forcedCampIds: [],
+    },
   };
 
   routeCtx.difficulty = calculateRouteDifficulty(routeCtx);
@@ -408,6 +450,7 @@ export function waypointsOfType(route, type) {
 
 /**
  * Interpolates coordinate position along the track points for a target mileage.
+ * Uses fast binary search over cumulative distances array.
  * @param {Array<[number, number]>} trackPoints
  * @param {number} targetMile
  * @returns {[number, number] | null}
@@ -416,24 +459,38 @@ export function getCoordinatesAtMile(trackPoints, targetMile) {
   if (!trackPoints || trackPoints.length === 0) return null;
   if (targetMile <= 0) return trackPoints[0];
 
-  let cumulative = 0;
-  for (let i = 1; i < trackPoints.length; i++) {
-    const p1 = trackPoints[i - 1];
-    const p2 = trackPoints[i];
-    const d = haversineDistance(p1[0], p1[1], p2[0], p2[1]);
-    if (cumulative + d >= targetMile) {
-      const ratio = (targetMile - cumulative) / d;
-      const lat = p1[0] + (p2[0] - p1[0]) * ratio;
-      const lon = p1[1] + (p2[1] - p1[1]) * ratio;
-      return [lat, lon];
+  const distances = getOrCreateCumulativeDistances(trackPoints);
+  const total = trackPoints._totalDistance || distances[distances.length - 1] || 0;
+  if (targetMile >= total) return trackPoints[trackPoints.length - 1];
+
+  let low = 0;
+  let high = distances.length - 1;
+  let idx = distances.length - 1;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (distances[mid] >= targetMile) {
+      idx = mid;
+      high = mid - 1;
+    } else {
+      low = mid + 1;
     }
-    cumulative += d;
   }
-  return trackPoints[trackPoints.length - 1];
+
+  if (idx <= 0) return trackPoints[0];
+  const p1 = trackPoints[idx - 1];
+  const p2 = trackPoints[idx];
+  const d1 = distances[idx - 1];
+  const d2 = distances[idx];
+  const segLen = d2 - d1;
+  if (segLen <= 0) return p1;
+  const ratio = (targetMile - d1) / segLen;
+  const lat = p1[0] + (p2[0] - p1[0]) * ratio;
+  const lon = p1[1] + (p2[1] - p1[1]) * ratio;
+  return [lat, lon];
 }
 
 /**
- * Extracts a segment of track points between two mile marks.
+ * Extracts a segment of track points between two mile marks using binary search.
  * @param {Array<[number, number]>} trackPoints
  * @param {number} startMi
  * @param {number} endMi
@@ -441,46 +498,49 @@ export function getCoordinatesAtMile(trackPoints, targetMile) {
  */
 export function getTrackSegmentForMiles(trackPoints, startMi, endMi) {
   if (!trackPoints || trackPoints.length === 0) return [];
+  const distances = getOrCreateCumulativeDistances(trackPoints);
+  const total = trackPoints._totalDistance || distances[distances.length - 1] || 0;
 
-  const distances = [0];
-  let acc = 0;
-  for (let i = 1; i < trackPoints.length; i++) {
-    acc += haversineDistance(
-      trackPoints[i - 1][0],
-      trackPoints[i - 1][1],
-      trackPoints[i][0],
-      trackPoints[i][1],
-    );
-    distances.push(acc);
+  if (startMi <= 0 && endMi >= total) {
+    return trackPoints;
   }
 
   let startIdx = 0;
   let endIdx = trackPoints.length - 1;
-  let minStartDelta = Number.POSITIVE_INFINITY;
-  let minEndDelta = Number.POSITIVE_INFINITY;
 
-  for (let i = 0; i < distances.length; i++) {
-    const dStart = Math.abs(distances[i] - startMi);
-    if (dStart < minStartDelta) {
-      minStartDelta = dStart;
-      startIdx = i;
-    }
-    const dEnd = Math.abs(distances[i] - endMi);
-    if (dEnd < minEndDelta) {
-      minEndDelta = dEnd;
-      endIdx = i;
+  let low = 0;
+  let high = distances.length - 1;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (distances[mid] < startMi) {
+      low = mid + 1;
+    } else {
+      startIdx = mid;
+      high = mid - 1;
     }
   }
 
-  return trackPoints.slice(startIdx, endIdx + 1);
+  low = startIdx;
+  high = distances.length - 1;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (distances[mid] <= endMi) {
+      endIdx = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  return trackPoints.slice(startIdx, Math.min(trackPoints.length, endIdx + 1));
 }
 
 /**
  * Calculates elevation gain and loss (in feet) for a segment of track points.
  * Applies a 10ft noise filter threshold.
- * @param {Array<[number, number, number]>} trackPoints 
- * @param {number} startMi 
- * @param {number} endMi 
+ * @param {Array<[number, number, number]>} trackPoints
+ * @param {number} startMi
+ * @param {number} endMi
  * @returns {{gainFt: number, lossFt: number}}
  */
 export function calculateElevation(trackPoints, startMi, endMi) {
@@ -490,7 +550,7 @@ export function calculateElevation(trackPoints, startMi, endMi) {
   let gain = 0;
   let loss = 0;
   // Threshold to avoid accumulating micro-fluctuations (e.g., 3 meters ~ 10ft)
-  const THRESHOLD_M = 3; 
+  const THRESHOLD_M = 3;
 
   let lastEle = segment[0][2] || 0;
 
@@ -746,13 +806,7 @@ export function computeElevationProfileSamples(route, numSamples = 200) {
   const totalDist = route.totalDistanceMiles || 0;
   if (totalDist <= 0) return [];
 
-  // Compute cumulative distances for trackpoints
-  const cumDist = [0];
-  let acc = 0;
-  for (let i = 1; i < points.length; i++) {
-    acc += haversineDistance(points[i - 1][0], points[i - 1][1], points[i][0], points[i][1]);
-    cumDist.push(acc);
-  }
+  const cumDist = getOrCreateCumulativeDistances(points);
 
   const step = totalDist / Math.max(10, numSamples);
   const samples = [];
@@ -808,4 +862,3 @@ export function computeElevationProfileSamples(route, numSamples = 200) {
 
   return samples;
 }
-

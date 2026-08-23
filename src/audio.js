@@ -11,7 +11,7 @@ export function initVoiceFromStorage() {
 
 /**
  * Enable or disable voice navigation.
- * @param {boolean} enabled 
+ * @param {boolean} enabled
  */
 export function setVoiceEnabled(enabled) {
   voiceEnabled = enabled;
@@ -34,30 +34,30 @@ export function isVoiceEnabled() {
 /**
  * Speaks a given text using the Web Speech API.
  * Cancels any ongoing speech before starting.
- * @param {string} text 
+ * @param {string} text
  */
 export function speak(text) {
   if (!voiceEnabled || !('speechSynthesis' in window)) return;
-  
+
   window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(text);
-  
+
   // Optional: Pick a specific voice if desired, for now we use default.
   window.speechSynthesis.speak(utterance);
 }
 
 /**
  * Generates a human-readable status report for TTS.
- * @param {number} currentMile 
- * @param {number} targetMile 
- * @param {Date} etaDate 
+ * @param {number} currentMile
+ * @param {number} targetMile
+ * @param {Date} etaDate
  * @param {object} nextResource { type: 'water' | 'camp', distance: number }
  * @returns {string}
  */
 export function generateStatusReport(currentMile, targetMile, etaDate, nextResource = null) {
   const parts = [];
   parts.push(`You are at mile ${Math.round(currentMile)}.`);
-  
+
   if (nextResource) {
     const roundedDist = Math.round(nextResource.distance * 10) / 10;
     const typeLabel = nextResource.type === 'camp' ? 'camping' : nextResource.type;
@@ -74,9 +74,9 @@ export function generateStatusReport(currentMile, targetMile, etaDate, nextResou
 }
 
 export const TIERED_TRIGGER_DISTANCES = {
-  water: 0.5,      // 0.5 miles (800m)
-  camping: 1.0,    // 1.0 mile (1.6km)
-  resupply: 2.0,   // 2.0 miles (3.2km)
+  water: 0.5, // 0.5 miles (800m)
+  camping: 1.0, // 1.0 mile (1.6km)
+  resupply: 2.0, // 2.0 miles (3.2km)
   offCourse: 0.06, // 100 meters (~0.06 mi)
 };
 
@@ -123,4 +123,3 @@ export function generateOffCourseAlert(offCourseDistMi) {
   const yards = Math.round(offCourseDistMi * 1760);
   return `Warning. Route deviation detected. You are ${yards} yards off course. Please check your map.`;
 }
-

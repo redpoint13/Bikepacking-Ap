@@ -9,7 +9,7 @@
 
 import { calculateElevation } from './gpx.js';
 import { calculateSegmentDifficulty } from './difficulty.js';
-import { buildPlan } from './plan.js';
+import { buildPlan, getActiveStopIds } from './plan.js';
 
 /**
  * Format hours into a human readable duration (e.g., "4h 15m").
@@ -58,28 +58,38 @@ export function computeSegmentAnalytics(route, startMi, endMi, options = {}) {
   const estimatedMovingHours = Number((baseMovingHours + elevationPenaltyHours).toFixed(2));
   const estimatedElapsedHours = Number((estimatedMovingHours * 1.25).toFixed(2)); // +25% for stops/breaks
 
-  // 3. Logistical Carry Math
+  // 3. Logistical Requirements (Water & Calorie budgeting)
   const waterNeededOz = Math.round(distanceMi * ozPerMile);
-  const caloriesNeededKcal = Math.round((distanceMi / targetDailyMiles) * caloriesPerDay);
-  const campMealsNeeded = Math.round((distanceMi / targetDailyMiles) * campMealsPerDay);
+  const waterNeededLiters = Number((waterNeededOz * 0.0295735).toFixed(1));
 
-  // 4. Waypoints within segment
-  const allWaypoints = route ? route.waypoints : [];
-  const segmentWaypoints = allWaypoints.filter(
-    (w) => w.distanceFromStartMi >= sMi - 0.05 && w.distanceFromStartMi <= eMi + 0.05,
+  // Calories: proportion of daily target + elevation metabolic cost (~100 kcal per 1000 ft climbing)
+  const baseCalories = (distanceMi / targetDailyMiles) * caloriesPerDay;
+  const climbCalories = (gainFt / 1000) * 100;
+  const caloriesNeededKcal = Math.round(baseCalories + climbCalories);
+  const campMealsNeeded = Math.max(
+    0,
+    Math.round((distanceMi / targetDailyMiles) * campMealsPerDay),
+  );
+
+  // 4. Resource & Waypoint Filtering
+  const waypoints = route ? route.waypoints : [];
+  const segmentWaypoints = waypoints.filter(
+    (w) => w.distanceFromStartMi >= sMi && w.distanceFromStartMi <= eMi,
   );
 
   const waterSources = segmentWaypoints.filter((w) => w.type === 'water');
   const resupplyPoints = segmentWaypoints.filter((w) => w.type === 'resupply');
   const campSpots = segmentWaypoints.filter((w) => w.type === 'camping');
 
+  const hillinessFtPerMi = distanceMi > 0 ? Math.round(gainFt / distanceMi) : 0;
+
   return {
-    startMi: Number(sMi.toFixed(1)),
-    endMi: Number(eMi.toFixed(1)),
+    startMi: sMi,
+    endMi: eMi,
     distanceMi,
     gainFt,
     lossFt,
-    hillinessFtPerMi: difficulty.hillinessFtPerMi,
+    hillinessFtPerMi,
     difficulty,
     pacing: {
       paceMph,
@@ -90,7 +100,7 @@ export function computeSegmentAnalytics(route, startMi, endMi, options = {}) {
     },
     logistics: {
       waterNeededOz,
-      waterNeededLiters: Number((waterNeededOz / 33.814).toFixed(1)),
+      waterNeededLiters,
       caloriesNeededKcal,
       campMealsNeeded,
     },
@@ -104,7 +114,9 @@ export function computeSegmentAnalytics(route, startMi, endMi, options = {}) {
 }
 
 /**
- * Builds analytics for each day in a day plan, including sub-leg analytics.
+ * Builds day-by-day and leg-by-leg analytics for an entire planned route.
+ * Restricts sub-legs to actual designated stops (camps, resupplies, active water stops)
+ * rather than splitting on every individual stream or POI.
  *
  * @param {import('./gpx.js').RouteContext} route
  * @param {Object} [options={}]
@@ -114,18 +126,22 @@ export function buildDaySegmentAnalytics(route, options = {}) {
   if (!route) return [];
   const plan = buildPlan(route, options);
   const dayPlan = plan.dayPlan || [];
+  const activeStopIds = getActiveStopIds(route, options);
 
   return dayPlan.map((day) => {
     const dayStartMi = day.startMi;
     const dayEndMi = day.chosen ? day.chosen.endMi : dayStartMi;
     const dayAnalytics = computeSegmentAnalytics(route, dayStartMi, dayEndMi, options);
 
-    // Find key stopping waypoints on this day to build sub-leg analytics
-    const keyWaypoints = route.waypoints.filter(
+    // Find key stopping waypoints on this day to build sub-leg analytics.
+    // Only include designated/active stops (resupplies, planned stops, user stops)
+    const keyWaypoints = (route.waypoints || []).filter(
       (w) =>
-        w.distanceFromStartMi > dayStartMi + 0.05 &&
-        w.distanceFromStartMi < dayEndMi - 0.05 &&
-        (w.type === 'resupply' || w.type === 'water' || w.type === 'camping'),
+        w.distanceFromStartMi > dayStartMi + 0.1 &&
+        w.distanceFromStartMi < dayEndMi - 0.1 &&
+        (activeStopIds.has(w.id) ||
+          w.type === 'resupply' ||
+          (w.source === 'user' && w.type !== 'navigation')),
     );
 
     // Form sequence of leg boundaries: dayStart -> keyWaypoints -> dayEnd

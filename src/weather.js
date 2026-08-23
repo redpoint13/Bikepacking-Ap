@@ -53,6 +53,6 @@ export async function fetchWeatherForecast(lat, lon) {
  */
 export function windDirectionCardinal(deg) {
   const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
-  const idx = Math.round(((deg % 360) / 45)) % 8;
+  const idx = Math.round((deg % 360) / 45) % 8;
   return directions[idx];
 }

@@ -1,24 +1,30 @@
 /**
  * gps.js — GPS tracking and simulation for Bikepacker Navigator.
  *
- * Handles browser Geolocation API tracking and provides a high-fidelity
- * route simulation mode for testing.
+ * Handles Capacitor native Geolocation API tracking and browser Geolocation
+ * with high-accuracy GPS, auto WakeLock, and simulation mode.
  *
  * @module gps
  */
 
+import { Capacitor } from '@capacitor/core';
+import { Geolocation } from '@capacitor/geolocation';
 import { haversineDistance } from './gpx.js';
+import { setKeepAwake } from './mobile.js';
 
 export class GPSManager {
   /**
-   * @param {import('./gpx.js').RouteContext} route
+   * @param {import("./gpx.js").RouteContext} route
    */
   constructor(route) {
     this.route = route;
     this.watchId = null;
+    this.nativeWatchId = null;
     this.simIntervalId = null;
     this.simDistanceMi = 0;
     this.callbacks = new Set();
+    this.lastPos = null;
+    this.lastTime = null;
   }
 
   /**
@@ -42,48 +48,90 @@ export class GPSManager {
   }
 
   /**
-   * Starts tracking using the browser's Geolocation API.
+   * Calculates smoothed pace given the current coordinates.
+   * @private
    */
-  startTracking() {
-    this.stop();
+  _calculatePace(latitude, longitude) {
+    const now = Date.now();
+    let paceMph = 10; // Default fallback pace
 
-    if (!navigator.geolocation) {
-      console.warn('[BPNav] Geolocation is not supported by this browser.');
-      return;
+    if (this.lastPos && this.lastTime) {
+      const distMi = haversineDistance(this.lastPos.lat, this.lastPos.lon, latitude, longitude);
+      const timeHours = (now - this.lastTime) / (1000 * 60 * 60);
+      if (timeHours > 0.005) {
+        // At least 18 seconds to calculate a stable pace
+        paceMph = Math.min(35, Math.max(1, distMi / timeHours));
+      }
     }
 
-    let lastPos = null;
-    let lastTime = null;
+    this.lastPos = { lat: latitude, lon: longitude };
+    this.lastTime = now;
+    return paceMph;
+  }
 
-    this.watchId = navigator.geolocation.watchPosition(
-      (position) => {
-        const { latitude, longitude, accuracy } = position.coords;
-        const now = Date.now();
-        let paceMph = 10; // Default fallback pace
+  /**
+   * Starts high-accuracy GPS tracking with screen keep-awake.
+   */
+  async startTracking() {
+    this.stop();
+    if (typeof window !== 'undefined') {
+      window.__bpnav_tracking_active = true;
+    }
+    await setKeepAwake(true);
 
-        if (lastPos && lastTime) {
-          const distMi = haversineDistance(lastPos.lat, lastPos.lon, latitude, longitude);
-          const timeHours = (now - lastTime) / (1000 * 60 * 60);
-          if (timeHours > 0.005) {
-            // At least 18 seconds to get a stable pace
-            paceMph = Math.min(35, Math.max(1, distMi / timeHours));
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const perm = await Geolocation.checkPermissions();
+        if (perm.location !== 'granted') {
+          const req = await Geolocation.requestPermissions({ permissions: ['location'] });
+          if (req.location !== 'granted') {
+            console.warn('[BPNav] Location permission denied by user.');
+            return;
           }
         }
 
-        lastPos = { lat: latitude, lon: longitude };
-        lastTime = now;
+        this.nativeWatchId = await Geolocation.watchPosition(
+          {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0,
+          },
+          (position, err) => {
+            if (err) {
+              console.warn('[BPNav] Native geolocation error:', err.message);
+              return;
+            }
+            if (!position?.coords) return;
+            const { latitude, longitude, accuracy } = position.coords;
+            const paceMph = this._calculatePace(latitude, longitude);
+            this._trigger({ lat: latitude, lon: longitude, accuracy, paceMph });
+          },
+        );
+        return;
+      } catch (err) {
+        console.warn('[BPNav] Native Geolocation failed, falling back to web:', err.message);
+      }
+    }
 
-        this._trigger({ lat: latitude, lon: longitude, accuracy, paceMph });
-      },
-      (error) => {
-        console.warn('[BPNav] Geolocation error:', error.message);
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0,
-      },
-    );
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      this.watchId = navigator.geolocation.watchPosition(
+        (position) => {
+          const { latitude, longitude, accuracy } = position.coords;
+          const paceMph = this._calculatePace(latitude, longitude);
+          this._trigger({ lat: latitude, lon: longitude, accuracy, paceMph });
+        },
+        (error) => {
+          console.warn('[BPNav] Web geolocation error:', error.message);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0,
+        },
+      );
+    } else {
+      console.warn('[BPNav] Geolocation is not supported in this environment.');
+    }
   }
 
   /**
@@ -146,36 +194,72 @@ export class GPSManager {
   /**
    * Starts tracking in low-power mode for Ghost Mode battery savings.
    */
-  startLowPowerTracking() {
+  async startLowPowerTracking() {
     this.stop();
+    if (typeof window !== 'undefined') {
+      window.__bpnav_tracking_active = false;
+    }
+    await setKeepAwake(false);
 
-    if (!navigator.geolocation) {
-      console.warn('[BPNav] Geolocation is not supported by this browser.');
-      return;
+    if (Capacitor.isNativePlatform()) {
+      try {
+        this.nativeWatchId = await Geolocation.watchPosition(
+          {
+            enableHighAccuracy: false,
+            timeout: 20000,
+            maximumAge: 10000,
+          },
+          (position, err) => {
+            if (err) {
+              console.warn('[BPNav] Native low-power geolocation error:', err.message);
+              return;
+            }
+            if (!position?.coords) return;
+            const { latitude, longitude, accuracy } = position.coords;
+            this._trigger({ lat: latitude, lon: longitude, accuracy, paceMph: 10 });
+          },
+        );
+        return;
+      } catch (err) {
+        console.warn('[BPNav] Native low-power Geolocation failed, fallback to web:', err.message);
+      }
     }
 
-    this.watchId = navigator.geolocation.watchPosition(
-      (position) => {
-        const { latitude, longitude, accuracy } = position.coords;
-        this._trigger({ lat: latitude, lon: longitude, accuracy, paceMph: 10 });
-      },
-      (error) => {
-        console.warn('[BPNav] Geolocation error:', error.message);
-      },
-      {
-        enableHighAccuracy: false,
-        timeout: 20000,
-        maximumAge: 10000,
-      },
-    );
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      this.watchId = navigator.geolocation.watchPosition(
+        (position) => {
+          const { latitude, longitude, accuracy } = position.coords;
+          this._trigger({ lat: latitude, lon: longitude, accuracy, paceMph: 10 });
+        },
+        (error) => {
+          console.warn('[BPNav] Geolocation error:', error.message);
+        },
+        {
+          enableHighAccuracy: false,
+          timeout: 20000,
+          maximumAge: 10000,
+        },
+      );
+    }
   }
 
   /**
    * Stops any active tracking or simulation.
    */
   stop() {
+    if (typeof window !== 'undefined') {
+      window.__bpnav_tracking_active = false;
+    }
+    setKeepAwake(false).catch(() => {});
+
+    if (this.nativeWatchId !== null) {
+      Geolocation.clearWatch({ id: this.nativeWatchId }).catch(() => {});
+      this.nativeWatchId = null;
+    }
     if (this.watchId !== null) {
-      navigator.geolocation.clearWatch(this.watchId);
+      if (typeof navigator !== 'undefined' && navigator.geolocation) {
+        navigator.geolocation.clearWatch(this.watchId);
+      }
       this.watchId = null;
     }
     if (this.simIntervalId !== null) {

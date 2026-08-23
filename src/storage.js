@@ -1,27 +1,31 @@
 /**
  * storage.js -- IndexedDB persistence for Bikepacker Navigator.
  *
- * Stores the most recently loaded route (raw GPX text + metadata) so it
- * survives page reloads, phone sleep, and PWA cold starts.
+ * Supports multi-route library storage, active route tracking, automated
+ * v1-to-v2 migration, and route bundle exports.
  *
  * @module storage
  */
 
 const DB_NAME = 'bpnav-v1';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = 'route';
+const ROUTES_STORE = 'routes';
 const ROUTE_KEY = 'current';
+const ACTIVE_ID_KEY = 'active-route-id';
 const ENRICHMENT_KEY = 'current-enrichment';
+const OPTIONS_KEY = 'current-options';
+const METADATA_KEY = 'current-metadata';
 
 // ---------------------------------------------------------------------------
-// DB bootstrap
+// DB bootstrap & migration
 // ---------------------------------------------------------------------------
 
 /**
- * Opens (or creates) the IndexedDB database.
+ * Opens (or creates/upgrades) the IndexedDB database.
  * @returns {Promise<IDBDatabase>}
  */
-function openDB() {
+export function openDB() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
 
@@ -31,38 +35,239 @@ function openDB() {
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME);
       }
+      if (!db.objectStoreNames.contains(ROUTES_STORE)) {
+        db.createObjectStore(ROUTES_STORE, { keyPath: 'id' });
+      }
     };
 
-    req.onsuccess = (e) => resolve(e.target.result);
+    req.onsuccess = async (e) => {
+      const db = e.target.result;
+      try {
+        await migrateV1IfNeeded(db);
+      } catch (err) {
+        console.warn('[BPNav] DB migration notice:', err.message);
+      }
+      resolve(db);
+    };
     req.onerror = (e) => reject(e.target.error);
   });
 }
 
+/**
+ * Migrates existing v1 single-route storage into the v2 multi-route library store.
+ * @param {IDBDatabase} db
+ */
+async function migrateV1IfNeeded(db) {
+  if (!db.objectStoreNames.contains(ROUTES_STORE)) return;
+
+  const count = await new Promise((res) => {
+    const tx = db.transaction(ROUTES_STORE, 'readonly');
+    const req = tx.objectStore(ROUTES_STORE).count();
+    req.onsuccess = () => res(req.result);
+    req.onerror = () => res(0);
+  });
+
+  if (count > 0) return; // Already migrated or has items
+
+  // Check if v1 route exists
+  const v1Route = await new Promise((res) => {
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const req = tx.objectStore(STORE_NAME).get(ROUTE_KEY);
+    req.onsuccess = () => res(req.result ?? null);
+    req.onerror = () => res(null);
+  });
+
+  if (v1Route && v1Route.gpxText) {
+    const routeId = 'route-' + Date.now();
+    const routeRecord = {
+      id: routeId,
+      name: v1Route.filename ? v1Route.filename.replace(/\.gpx$/i, '') : 'Saved Route',
+      filename: v1Route.filename || 'route.gpx',
+      gpxText: v1Route.gpxText,
+      savedAt: v1Route.savedAt || Date.now(),
+      waypoints: [],
+      options: null,
+    };
+
+    // Load enrichment and options if present
+    const waypoints = await new Promise((res) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const req = tx.objectStore(STORE_NAME).get(ENRICHMENT_KEY);
+      req.onsuccess = () => res(req.result?.waypoints ?? []);
+      req.onerror = () => res([]);
+    });
+    routeRecord.waypoints = waypoints;
+
+    const options = await new Promise((res) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const req = tx.objectStore(STORE_NAME).get(OPTIONS_KEY);
+      req.onsuccess = () => res(req.result?.options ?? null);
+      req.onerror = () => res(null);
+    });
+    routeRecord.options = options;
+
+    // Save to routes store and set active
+    await new Promise((res, rej) => {
+      const tx = db.transaction([ROUTES_STORE, STORE_NAME], 'readwrite');
+      tx.objectStore(ROUTES_STORE).put(routeRecord);
+      tx.objectStore(STORE_NAME).put(routeId, ACTIVE_ID_KEY);
+      tx.oncomplete = () => res();
+      tx.onerror = (e) => rej(e.target.error);
+    });
+  }
+}
+
 // ---------------------------------------------------------------------------
-// Public API
+// Multi-Route Library API
 // ---------------------------------------------------------------------------
 
 /**
- * Persists the raw GPX text for the current route.
- * @param {string} gpxText   - Raw GPX file content
- * @param {string} filename  - Original file name (for display)
- * @returns {Promise<void>}
+ * Retrieves all saved routes from the library.
+ * @returns {Promise<Array<object>>}
  */
-export async function saveRoute(gpxText, filename) {
+export async function getAllRoutes() {
   const db = await openDB();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    tx.objectStore(STORE_NAME).put({ gpxText, filename, savedAt: Date.now() }, ROUTE_KEY);
+    const tx = db.transaction(ROUTES_STORE, 'readonly');
+    const req = tx.objectStore(ROUTES_STORE).getAll();
+    req.onsuccess = () => {
+      const list = req.result || [];
+      list.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
+      resolve(list);
+    };
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+/**
+ * Retrieves a single route record by ID.
+ * @param {string} id
+ * @returns {Promise<object | null>}
+ */
+export async function getRouteById(id) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(ROUTES_STORE, 'readonly');
+    const req = tx.objectStore(ROUTES_STORE).get(id);
+    req.onsuccess = () => resolve(req.result ?? null);
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+/**
+ * Saves a route into the library store.
+ * @param {object} routeData
+ * @param {string} [routeData.id]
+ * @param {string} routeData.name
+ * @param {string} routeData.filename
+ * @param {string} routeData.gpxText
+ * @param {number} [routeData.totalDistanceMiles]
+ * @param {Array} [routeData.waypoints]
+ * @param {object} [routeData.options]
+ * @returns {Promise<string>} The route ID
+ */
+export async function saveRouteToLibrary(routeData) {
+  const db = await openDB();
+  const id = routeData.id || 'route-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+  const record = {
+    id,
+    name: routeData.name || routeData.filename || 'Untitled Route',
+    filename: routeData.filename || 'route.gpx',
+    gpxText: routeData.gpxText,
+    totalDistanceMiles: routeData.totalDistanceMiles || 0,
+    waypoints: routeData.waypoints || [],
+    options: routeData.options || null,
+    savedAt: routeData.savedAt || Date.now(),
+  };
+
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([ROUTES_STORE, STORE_NAME], 'readwrite');
+    tx.objectStore(ROUTES_STORE).put(record);
+    // Also keep legacy store in sync for immediate backward compatibility
+    tx.objectStore(STORE_NAME).put(
+      { gpxText: record.gpxText, filename: record.filename, savedAt: record.savedAt },
+      ROUTE_KEY,
+    );
+    tx.objectStore(STORE_NAME).put(id, ACTIVE_ID_KEY);
+    tx.oncomplete = () => resolve(id);
+    tx.onerror = (e) => reject(e.target.error);
+  });
+}
+
+/**
+ * Deletes a route from the library by ID.
+ * @param {string} id
+ * @returns {Promise<void>}
+ */
+export async function deleteRouteFromLibrary(id) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([ROUTES_STORE, STORE_NAME], 'readwrite');
+    tx.objectStore(ROUTES_STORE).delete(id);
+    // If active route was deleted, clear active ID
+    const activeReq = tx.objectStore(STORE_NAME).get(ACTIVE_ID_KEY);
+    activeReq.onsuccess = () => {
+      if (activeReq.result === id) {
+        tx.objectStore(STORE_NAME).delete(ACTIVE_ID_KEY);
+        tx.objectStore(STORE_NAME).delete(ROUTE_KEY);
+      }
+    };
     tx.oncomplete = () => resolve();
     tx.onerror = (e) => reject(e.target.error);
   });
 }
 
 /**
- * Loads the most recently persisted route.
- * @returns {Promise<{ gpxText: string, filename: string, savedAt: number } | null>}
+ * Gets the ID of the currently active route.
+ * @returns {Promise<string | null>}
  */
+export async function getActiveRouteId() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const req = tx.objectStore(STORE_NAME).get(ACTIVE_ID_KEY);
+    req.onsuccess = () => resolve(req.result ?? null);
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+/**
+ * Sets the currently active route ID.
+ * @param {string} id
+ * @returns {Promise<void>}
+ */
+export async function setActiveRouteId(id) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).put(id, ACTIVE_ID_KEY);
+    tx.oncomplete = () => resolve();
+    tx.onerror = (e) => reject(e.target.error);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Backward-compatible single route API
+// ---------------------------------------------------------------------------
+
+export async function saveRoute(gpxText, filename) {
+  return saveRouteToLibrary({
+    name: filename ? filename.replace(/\.gpx$/i, '') : 'Current Route',
+    filename: filename || 'route.gpx',
+    gpxText,
+  });
+}
+
 export async function loadRoute() {
+  const activeId = await getActiveRouteId();
+  if (activeId) {
+    const record = await getRouteById(activeId);
+    if (record) {
+      return { gpxText: record.gpxText, filename: record.filename, savedAt: record.savedAt };
+    }
+  }
+
+  // Fallback to legacy key
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readonly');
@@ -72,25 +277,20 @@ export async function loadRoute() {
   });
 }
 
-/**
- * Removes the stored route (e.g. when the user explicitly clears it).
- * @returns {Promise<void>}
- */
 export async function clearRoute() {
+  const activeId = await getActiveRouteId();
+  if (activeId) {
+    await deleteRouteFromLibrary(activeId);
+  }
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite');
     tx.objectStore(STORE_NAME).delete(ROUTE_KEY);
+    tx.objectStore(STORE_NAME).delete(ACTIVE_ID_KEY);
     tx.oncomplete = () => resolve();
     tx.onerror = (e) => reject(e.target.error);
   });
 }
-
-// ---------------------------------------------------------------------------
-// Route Metadata cache
-// ---------------------------------------------------------------------------
-
-const METADATA_KEY = 'current-metadata';
 
 export async function saveRouteMetadata(metadata) {
   const db = await openDB();
@@ -122,34 +322,36 @@ export async function clearRouteMetadata() {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Enrichment cache -- offline fallback for OSM / USGS waypoints
-// ---------------------------------------------------------------------------
-
-/**
- * Persists the merged enriched waypoint array for the current route.
- * Keyed alongside the route record so it stays in sync with saves/clears.
- *
- * @param {import('./gpx.js').Waypoint[]} waypoints
- * @returns {Promise<void>}
- */
 export async function saveEnrichment(waypoints) {
+  const activeId = await getActiveRouteId();
   const db = await openDB();
+
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const tx = db.transaction([STORE_NAME, ROUTES_STORE], 'readwrite');
     tx.objectStore(STORE_NAME).put({ waypoints, savedAt: Date.now() }, ENRICHMENT_KEY);
+
+    if (activeId) {
+      const routeReq = tx.objectStore(ROUTES_STORE).get(activeId);
+      routeReq.onsuccess = () => {
+        if (routeReq.result) {
+          const updated = { ...routeReq.result, waypoints };
+          tx.objectStore(ROUTES_STORE).put(updated);
+        }
+      };
+    }
+
     tx.oncomplete = () => resolve();
     tx.onerror = (e) => reject(e.target.error);
   });
 }
 
-/**
- * Loads the most recently cached enrichment waypoints.
- * Returns null if no enrichment has been saved yet.
- *
- * @returns {Promise<import('./gpx.js').Waypoint[] | null>}
- */
 export async function loadEnrichment() {
+  const activeId = await getActiveRouteId();
+  if (activeId) {
+    const record = await getRouteById(activeId);
+    if (record?.waypoints?.length) return record.waypoints;
+  }
+
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readonly');
@@ -159,10 +361,6 @@ export async function loadEnrichment() {
   });
 }
 
-/**
- * Removes any cached enrichment data (use when loading a fresh route).
- * @returns {Promise<void>}
- */
 export async function clearEnrichment() {
   const db = await openDB();
   return new Promise((resolve, reject) => {
@@ -173,28 +371,36 @@ export async function clearEnrichment() {
   });
 }
 
-const OPTIONS_KEY = 'current-options';
-
-/**
- * Persists the plan options (overrides, thresholds, daily mileage).
- * @param {object} options
- * @returns {Promise<void>}
- */
 export async function savePlanOptions(options) {
+  const activeId = await getActiveRouteId();
   const db = await openDB();
+
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const tx = db.transaction([STORE_NAME, ROUTES_STORE], 'readwrite');
     tx.objectStore(STORE_NAME).put({ options, savedAt: Date.now() }, OPTIONS_KEY);
+
+    if (activeId) {
+      const routeReq = tx.objectStore(ROUTES_STORE).get(activeId);
+      routeReq.onsuccess = () => {
+        if (routeReq.result) {
+          const updated = { ...routeReq.result, options };
+          tx.objectStore(ROUTES_STORE).put(updated);
+        }
+      };
+    }
+
     tx.oncomplete = () => resolve();
     tx.onerror = (e) => reject(e.target.error);
   });
 }
 
-/**
- * Loads the persisted plan options.
- * @returns {Promise<object | null>}
- */
 export async function loadPlanOptions() {
+  const activeId = await getActiveRouteId();
+  if (activeId) {
+    const record = await getRouteById(activeId);
+    if (record?.options) return record.options;
+  }
+
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readonly');
@@ -204,10 +410,6 @@ export async function loadPlanOptions() {
   });
 }
 
-/**
- * Clears the persisted plan options.
- * @returns {Promise<void>}
- */
 export async function clearPlanOptions() {
   const db = await openDB();
   return new Promise((resolve, reject) => {
@@ -226,7 +428,10 @@ export async function exportPlanBundle() {
   const stored = await loadRoute();
   if (!stored) throw new Error('No route loaded to export.');
 
-  const waypoints = (await loadEnrichment().catch(() => [])) || [];
+  const rawWaypoints = (await loadEnrichment().catch(() => [])) || [];
+  const waypoints = rawWaypoints.filter(
+    (w) => !w.id?.startsWith('synth-') && !w.isSynthetic && !w.name?.includes('Dispersed Camp ('),
+  );
   const options = await loadPlanOptions().catch(() => null);
 
   return {

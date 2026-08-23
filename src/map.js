@@ -8,7 +8,13 @@
  */
 
 import maplibregl from 'maplibre-gl';
-import { getCoordinatesAtMile, getTrackSegmentForMiles, haversineDistance } from './gpx.js';
+import {
+  getCoordinatesAtMile,
+  getTrackSegmentForMiles,
+  haversineDistance,
+  distanceFromStart,
+  nearestTrackPointIndex,
+} from './gpx.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -70,6 +76,23 @@ export function initMap(container, route, activeStopIds = new Set(), customWaypo
   map.on('load', () => {
     addRouteLayer(map, trackPoints);
     addWaypointMarkers(map, waypoints, activeStopIds);
+  });
+
+  map.on('click', (e) => {
+    // If clicked on a marker or button, ignore background map click
+    if (
+      e.originalEvent?.target?.closest('.map-marker, .bp-popup, .mapboxgl-ctrl, .maplibregl-ctrl')
+    ) {
+      return;
+    }
+    const lat = e.lngLat.lat;
+    const lon = e.lngLat.lng;
+    const nearestMile = distanceFromStart(lat, lon, trackPoints);
+    window.dispatchEvent(
+      new CustomEvent('bpnav-map-click', {
+        detail: { lat, lon, nearestMile, lngLat: e.lngLat },
+      }),
+    );
   });
 
   // Add navigation controls (zoom +/-) — top-right, out of thumb reach
@@ -276,6 +299,33 @@ export function buildPopupHTML(waypoint, isActiveStop = true) {
         }</span>`
       : '';
 
+  const campWaterBadge =
+    waypoint.type === 'camping' && waypoint.waterAvailable
+      ? waypoint.waterAvailable === 'potable' ||
+        waypoint.waterAvailable === true ||
+        waypoint.waterAvailable === 'yes'
+        ? `<span class="popup-amenity popup-amenity--water-potable">💧 ${waypoint.waterDetails || 'Potable Water'}</span>`
+        : waypoint.waterAvailable === 'natural' || waypoint.waterAvailable === 'stream'
+          ? `<span class="popup-amenity popup-amenity--water-natural">💧 ${waypoint.waterDetails || 'Natural Water (Filter)'}</span>`
+          : waypoint.waterAvailable === 'none' ||
+              waypoint.waterAvailable === false ||
+              waypoint.waterAvailable === 'no'
+            ? `<span class="popup-amenity popup-amenity--water-none">🚫 Dry Camp</span>`
+            : ''
+      : '';
+
+  const campFeeBadge =
+    waypoint.type === 'camping' && waypoint.fee
+      ? String(waypoint.fee).toLowerCase() === 'free'
+        ? `<span class="popup-amenity popup-amenity--fee-free">🆓 Free</span>`
+        : `<span class="popup-amenity popup-amenity--fee">💲 ${waypoint.fee}</span>`
+      : '';
+
+  const amenitiesRow =
+    tierBadge || campWaterBadge || campFeeBadge
+      ? `<div class="popup-amenities" style="display: flex; gap: 4px; flex-wrap: wrap; margin: 4px 0;">${tierBadge}${campWaterBadge}${campFeeBadge}</div>`
+      : '';
+
   const desc = waypoint.description ? `<p class="popup-desc">${waypoint.description}</p>` : '';
 
   const offCourseDist = waypoint.offCourseDistanceMi || 0;
@@ -320,11 +370,29 @@ export function buildPopupHTML(waypoint, isActiveStop = true) {
     <div class="map-popup">
       <p class="popup-type">${typeLabel} · ${distanceStr} mi</p>
       <p class="popup-name">${waypoint.name}</p>
-      ${tierBadge}
+      ${amenitiesRow}
       ${desc}
       ${reliabilityBar}
       ${offCourseWarning}
       ${toggleBtn}
+      ${
+        waypoint.source === 'user' || waypoint.id.startsWith('user-')
+          ? `<button class="popup-edit-btn" data-action="edit-waypoint" data-id="${waypoint.id}" style="
+           margin-top: 6px;
+           width: 100%;
+           padding: 6px;
+           background: rgba(255, 255, 255, 0.08);
+           color: var(--md-sys-color-primary, #6cdbb2);
+           border: 1px solid var(--md-sys-color-outline-variant);
+           border-radius: 4px;
+           font-size: 11px;
+           font-weight: 600;
+           cursor: pointer;
+         ">
+           ✏️ Edit Custom Waypoint
+         </button>`
+          : ''
+      }
     </div>
   `;
 }
@@ -351,15 +419,20 @@ function addWaypointMarkers(map, waypoints, activeStopIds = new Set()) {
 
     const marker = new maplibregl.Marker({ element: el }).setLngLat([waypoint.lon, waypoint.lat]);
 
-    // All waypoints (including skipped stops and navigation notes) are clickable with popups
-    const popup = new maplibregl.Popup({
-      offset: 12,
-      className: 'bp-popup',
-      closeButton: false,
-      maxWidth: '260px',
-    }).setHTML(buildPopupHTML(waypoint, isStop));
-
-    marker.setPopup(popup);
+    // Lazy popup creation on interaction to avoid hundreds of active DOM popup nodes
+    let popup = null;
+    el.addEventListener('click', () => {
+      if (!popup) {
+        popup = new maplibregl.Popup({
+          offset: 12,
+          className: 'bp-popup',
+          closeButton: false,
+          maxWidth: '260px',
+        }).setHTML(buildPopupHTML(waypoint, isStop));
+        marker.setPopup(popup);
+        marker.togglePopup();
+      }
+    });
 
     marker.addTo(map);
     markers.push(marker);
@@ -758,4 +831,3 @@ export function highlightMapSegment(map, trackPoints, startMi, endMi) {
   coordinates.forEach((c) => bounds.extend(c));
   map.fitBounds(bounds, { padding: 40, maxZoom: 14 });
 }
-

@@ -35,7 +35,11 @@
     "source": "cuesheet",
     "tier": "official",
     "landManager": "State Land",
-    "reliability": 95
+    "reliability": 95,
+    "waterAvailable": "potable",
+    "waterDetails": "Potable water, hot showers, and restrooms available",
+    "fee": "$25-$35/night",
+    "elevationFt": 3300
   },
   {
     "name": "Bill Williams Mountain Saddle Camp",
@@ -46,6 +50,10 @@
     "source": "cuesheet",
     "tier": "dispersed",
     "landManager": "USFS",
-    "reliability": 85
+    "reliability": 85,
+    "waterAvailable": "none",
+    "waterDetails": "No water (dry camp — carry all water)",
+    "fee": "Free",
+    "elevationFt": 8200
   }
 ]

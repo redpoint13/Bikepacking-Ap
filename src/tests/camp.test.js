@@ -7,9 +7,11 @@ import {
   fetchOSMCampSites,
   isNearRoute,
   mergeCampSources,
+  osmCampFee,
   osmCampLabel,
   osmCampReliability,
   osmCampTier,
+  osmCampWater,
   sampleTrackPoints,
 } from '../camp.js';
 import { parseGPX } from '../gpx.js';
@@ -230,6 +232,87 @@ describe('mergeCampSources', () => {
     expect(added).toBeDefined();
     expect(added.tier).toBe('dispersed');
     expect(added.reliability).toBe(80);
+  });
+
+  it('merges water and fee info onto camp waypoints', () => {
+    const osmEl = {
+      id: 99999,
+      type: 'node',
+      lat: 34.9,
+      lon: -111.8,
+      tags: {
+        tourism: 'camp_site',
+        name: 'Goose Creek Campground',
+        drinking_water: 'yes',
+        charge: '$27/night',
+      },
+    };
+    const merged = mergeCampSources(route, [osmEl]);
+    const added = merged.find((w) => w.id === 'osm-camp-99999');
+    expect(added).toBeDefined();
+    expect(added.waterAvailable).toBe('potable');
+    expect(added.fee).toBe('$27/night');
+  });
+});
+
+describe('osmCampWater', () => {
+  it('detects potable water from drinking_water=yes tag', () => {
+    const res = osmCampWater({ drinking_water: 'yes' });
+    expect(res.waterAvailable).toBe('potable');
+    expect(res.waterDetails).toContain('Potable');
+  });
+
+  it('detects no water from drinking_water=no tag', () => {
+    const res = osmCampWater({ drinking_water: 'no' });
+    expect(res.waterAvailable).toBe('none');
+  });
+
+  it('detects natural stream water from water=yes or waterway tags', () => {
+    const res = osmCampWater({ water: 'yes' });
+    expect(res.waterAvailable).toBe('natural');
+  });
+
+  it('infers potable water and hand pump from description text (Goose Creek CG)', () => {
+    const res = osmCampWater(
+      {},
+      'Goose Creek Campground',
+      'Potable water is available at this site. A hand pump is available.',
+    );
+    expect(res.waterAvailable).toBe('potable');
+    expect(res.waterDetails).toContain('hand pump');
+  });
+
+  it('infers dry camp from description text', () => {
+    const res = osmCampWater({}, 'Saddle Camp', 'Dry camp — carry all water.');
+    expect(res.waterAvailable).toBe('none');
+  });
+});
+
+describe('osmCampFee', () => {
+  it('reads direct charge tag', () => {
+    expect(osmCampFee({ charge: '$27/night' })).toBe('$27/night');
+  });
+
+  it('returns Free for fee=no tag', () => {
+    expect(osmCampFee({ fee: 'no' })).toBe('Free');
+  });
+
+  it('extracts nightly dollar amount from description (Goose Creek CG)', () => {
+    const fee = osmCampFee(
+      {},
+      'Goose Creek CG',
+      '$27 fee per site for overnight camping. $11 day use.',
+    );
+    expect(fee).toBe('$27/night');
+  });
+
+  it('infers Free for dispersed sites in description', () => {
+    const fee = osmCampFee(
+      {},
+      'Dispersed Forest Camp',
+      'Free dispersed camping along forest road.',
+    );
+    expect(fee).toBe('Free');
   });
 });
 

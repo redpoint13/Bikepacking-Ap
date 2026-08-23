@@ -35,7 +35,13 @@ export const PLAN_DEFAULTS = {
   /** Day length window max factor. */
   dayMaxFactor: 1.4,
   /** Whether to optimize water stops rather than stopping at every source. */
-  optimizeWaterStops: false,
+  optimizeWaterStops: true,
+  /** Target distance between water refill stops (miles). Default 20 mi. */
+  targetWaterIntervalMi: 20,
+  /** Water safety reserve margin (% of total capacity to retain). */
+  waterSafetyMarginPercent: 20,
+  /** Water needed for camp chores, dinner, overnight & morning (oz). */
+  campWaterReserveOz: 40,
   /** Overhead time penalty per water stop (minutes). */
   stopOverheadMinutes: 15,
   /** Penalty for carrying 1 oz of water for 1 mile (equivalent to minutes). */
@@ -137,6 +143,44 @@ function resourceWaypoints(route) {
 
 const round1 = (n) => Number(n.toFixed(1));
 
+/**
+ * Calculates estimated water consumption (in ounces) for a route stretch,
+ * adjusting for distance, elevation climbing gain, and terrain surface factor.
+ *
+ * Base consumption is scaled up during steep climbing sections because climbing
+ * significantly increases metabolic heat and sweat rate.
+ *
+ * @param {import('./gpx.js').RouteContext} route
+ * @param {number} fromMi
+ * @param {number} toMi
+ * @param {Partial<typeof PLAN_DEFAULTS>} [opts]
+ * @returns {number}
+ */
+export function computeWaterDemand(route, fromMi, toMi, opts = {}) {
+  const baseOzPerMile = opts.ozPerMile ?? PLAN_DEFAULTS.ozPerMile;
+  const miles = Math.max(0, toMi - fromMi);
+  if (miles <= 0.01) return 0;
+
+  let gainFt = 0;
+  if (route?.trackPoints && route.trackPoints.length >= 2) {
+    try {
+      const diff = calculateSegmentDifficulty(route.trackPoints, fromMi, toMi, {
+        surfaceFactor: opts.surfaceFactor ?? 1.2,
+      });
+      gainFt = diff?.gainFt || 0;
+    } catch {
+      gainFt = 0;
+    }
+  }
+
+  // Each 1,000 ft of climbing adds effort equivalent to ~0.6x base consumption per 1k ft
+  const climbExtraOz = (gainFt / 1000) * (baseOzPerMile * 0.6);
+  const surfaceMultiplier = opts.surfaceFactor ? opts.surfaceFactor / 1.2 : 1.0;
+
+  const totalOz = (miles * baseOzPerMile + climbExtraOz) * surfaceMultiplier;
+  return Math.ceil(totalOz);
+}
+
 // ---------------------------------------------------------------------------
 // 1. Water carry — dry stretches between reliable sources
 // ---------------------------------------------------------------------------
@@ -154,6 +198,7 @@ const round1 = (n) => Number(n.toFixed(1));
  *   miles: number,
  *   recommendedOz: number,
  *   exceedsCapacity: boolean,
+ *   isCampRefill?: boolean,
  * }>}
  */
 export function computeWaterCarry(route, opts = {}) {
@@ -184,9 +229,28 @@ export function computeWaterCarry(route, opts = {}) {
     return false;
   });
 
+  // Extract planned camp locations if available
+  const campWaypoints = [];
+  if (o.dayPlan) {
+    for (const d of o.dayPlan) {
+      if (d.chosen?.endMi != null && !d.chosen.isFinish) {
+        campWaypoints.push({
+          mi: d.chosen.endMi,
+          name: d.chosen.campName,
+          campId: d.chosen.campId,
+        });
+      }
+    }
+  } else if (o.dayCampSelections) {
+    const camps = waypoints.filter((w) => w.type === 'camping');
+    for (const c of camps) {
+      campWaypoints.push({ mi: c.distanceFromStartMi, name: c.name, campId: c.id });
+    }
+  }
+
   let stops = [];
   if (o.optimizeWaterStops) {
-    stops = optimizeWaterStops(route, candidates, o);
+    stops = optimizeWaterStops(route, candidates, o, campWaypoints);
   } else {
     stops = candidates;
   }
@@ -201,8 +265,8 @@ export function computeWaterCarry(route, opts = {}) {
   const findEmergencyStretch = (activeStops) => {
     const anchors = [0, ...activeStops.map((s) => s.distanceFromStartMi), total];
     for (let i = 1; i < anchors.length; i++) {
-      const dist = anchors[i] - anchors[i - 1];
-      if (dist * o.ozPerMile > o.waterCapacityOz) {
+      const demand = computeWaterDemand(route, anchors[i - 1], anchors[i], o);
+      if (demand > o.waterCapacityOz) {
         return { start: anchors[i - 1], end: anchors[i] };
       }
     }
@@ -264,7 +328,22 @@ export function computeWaterCarry(route, opts = {}) {
     const to = anchors[i];
     const miles = to.mi - from.mi;
     if (miles <= 0.05) continue; // skip duplicate / co-located anchors
-    const recommendedOz = Math.ceil(miles * o.ozPerMile);
+
+    let recommendedOz = computeWaterDemand(route, from.mi, to.mi, o);
+
+    // Check if this stretch ends at a dry campsite
+    const isCampRefill = campWaypoints.some(
+      (c) =>
+        Math.abs(c.mi - to.mi) < 0.5 &&
+        !stops.some(
+          (s) => Math.abs(s.distanceFromStartMi - c.mi) < 0.1 && (s.reliability ?? 0) >= 50,
+        ),
+    );
+
+    if (isCampRefill) {
+      recommendedOz += o.campWaterReserveOz ?? 40;
+    }
+
     stretches.push({
       fromMi: round1(from.mi),
       fromName: from.name,
@@ -273,81 +352,172 @@ export function computeWaterCarry(route, opts = {}) {
       miles: round1(miles),
       recommendedOz,
       exceedsCapacity: recommendedOz > o.waterCapacityOz,
+      isCampRefill,
     });
   }
   return stretches;
 }
 
 /**
- * Finds the optimal subset of water stops using a DAG shortest path algorithm.
- * Balances stop overhead (time) against the weight of carrying water.
+ * Finds the optimal subset of water stops along the route.
+ * Targets refilling every ~20 miles (configurable via targetWaterIntervalMi),
+ * skips unnecessary intermediate water sources when water level is safe,
+ * prioritizes high-reliability / low-detour sources, ensures camp water readiness,
+ * and handles forced/excluded stop overrides.
  *
  * @param {import('./gpx.js').RouteContext} route
- * @param {import('./gpx.js').Waypoint[]} candidates - filtered water waypoints
+ * @param {import('./gpx.js').Waypoint[]} candidates - filtered water & resupply waypoints
  * @param {typeof PLAN_DEFAULTS} o
+ * @param {Array<{ mi: number, name: string, campId?: string }>} [campStops=[]]
  * @returns {import('./gpx.js').Waypoint[]} Optimal subset of water stops
  */
-export function optimizeWaterStops(route, candidates, o) {
+export function optimizeWaterStops(route, candidates, o, campStops = []) {
   const total = route.totalDistanceMiles ?? 0;
-  const forcedWater = new Set(o.forcedWaterIds);
+  const forcedWater = new Set(o.forcedWaterIds || []);
+  const forcedResupply = new Set(o.forcedResupplyIds || []);
 
-  const nodes = [
-    { mi: 0, name: 'Start', wp: null },
-    ...candidates.map((wp) => ({
-      mi: wp.distanceFromStartMi,
-      name: wp.name,
-      wp,
-    })),
-    { mi: total, name: 'Finish', wp: null },
-  ];
+  const targetInterval = o.targetWaterIntervalMi ?? 20;
+  const capacity = o.waterCapacityOz ?? 100;
+  const safetyPercent = o.waterSafetyMarginPercent ?? 20;
+  const safeCapacity = capacity * (1 - safetyPercent / 100);
+
+  // Nodes in order from Start (0) to Finish (total)
+  const sortedCandidates = [...candidates].sort(
+    (a, b) => a.distanceFromStartMi - b.distanceFromStartMi,
+  );
 
   const chosen = [];
   let lastStopMi = 0;
-  
-  for (let i = 1; i < nodes.length - 1; i++) {
-    const node = nodes[i];
-    const waterLevelOz = o.waterCapacityOz - (node.mi - lastStopMi) * o.ozPerMile;
-    
-    let shouldStop = false;
-    
-    // Condition 0: Forced Stop
-    if (forcedWater.has(node.wp.id)) {
-      shouldStop = true;
+
+  // Helper to test if a candidate is forced
+  const isForced = (wp) =>
+    wp.type === 'water' ? forcedWater.has(wp.id) : forcedResupply.has(wp.id);
+
+  // Loop through route until we can safely reach the Finish
+  let currentSearchIndex = 0;
+  const maxLoops = sortedCandidates.length + 10;
+  let loops = 0;
+
+  while (loops++ < maxLoops) {
+    // 1. Can we reach Finish from lastStopMi safely?
+    const demandToFinish = computeWaterDemand(route, lastStopMi, total, o);
+    const hasPendingForcedAhead = sortedCandidates.slice(currentSearchIndex).some(isForced);
+    const hasPendingCampAhead = campStops.some((c) => c.mi > lastStopMi + 0.1 && c.mi <= total);
+
+    // If finish is reachable without exceeding safe capacity AND no forced/camp stops exist ahead:
+    if (demandToFinish <= safeCapacity && !hasPendingForcedAhead && !hasPendingCampAhead) {
+      break;
     }
-    
-    // Condition 1: Less than 25% capacity
-    if (!shouldStop && waterLevelOz < o.waterCapacityOz * 0.25) {
-      shouldStop = true;
+
+    // 2. Look at all upcoming candidates ahead of lastStopMi
+    const upcoming = [];
+    for (let i = currentSearchIndex; i < sortedCandidates.length; i++) {
+      const wp = sortedCandidates[i];
+      if (wp.distanceFromStartMi <= lastStopMi + 0.1) continue;
+
+      const demand = computeWaterDemand(route, lastStopMi, wp.distanceFromStartMi, o);
+      upcoming.push({ wp, index: i, demand, mi: wp.distanceFromStartMi });
     }
-    
-    // Condition 2: Cannot reach the next ON-TRACK water source
-    if (!shouldStop) {
-      let nextOnTrackNode = null;
-      for (let k = i + 1; k < nodes.length; k++) {
-        if (k === nodes.length - 1) {
-          nextOnTrackNode = nodes[k]; // Finish line is always "on track"
-          break;
-        }
-        const wp = nodes[k].wp;
-        if ((wp.offCourseDistanceMi || 0) <= 0.05) {
-          nextOnTrackNode = nodes[k];
-          break;
+
+    if (upcoming.length === 0) {
+      break;
+    }
+
+    // 3. Check for forced stops in immediate reach
+    const forcedInReach = upcoming.filter((u) => isForced(u.wp) && u.demand <= capacity);
+    if (forcedInReach.length > 0) {
+      // Pick the earliest forced stop
+      const pick = forcedInReach[0];
+      chosen.push(pick.wp);
+      lastStopMi = pick.mi;
+      currentSearchIndex = pick.index + 1;
+      continue;
+    }
+
+    // 4. Check for upcoming camp stop within reach
+    const nextCamp = campStops.find(
+      (c) => c.mi > lastStopMi + 0.1 && c.mi <= lastStopMi + targetInterval * 1.4,
+    );
+    if (nextCamp) {
+      const candidatesBeforeCamp = upcoming.filter(
+        (u) => u.mi <= nextCamp.mi + 0.5 && u.demand <= capacity,
+      );
+      if (candidatesBeforeCamp.length > 0) {
+        candidatesBeforeCamp.sort(
+          (a, b) => Math.abs(a.mi - nextCamp.mi) - Math.abs(b.mi - nextCamp.mi),
+        );
+        const pick = candidatesBeforeCamp[0];
+        chosen.push(pick.wp);
+        lastStopMi = pick.mi;
+        currentSearchIndex = pick.index + 1;
+        continue;
+      }
+    }
+
+    // 5. Evaluate all reachable candidates within capacity
+    const reachable = upcoming.filter((u) => u.demand <= capacity);
+    if (reachable.length === 0) {
+      const pick = upcoming[0];
+      chosen.push(pick.wp);
+      lastStopMi = pick.mi;
+      currentSearchIndex = pick.index + 1;
+      continue;
+    }
+
+    const safeCandidates = reachable.filter((u) => u.demand <= safeCapacity);
+    const candidatePool = safeCandidates.length > 0 ? safeCandidates : reachable;
+
+    // Multi-factor scoring for candidate selection
+    let bestPick = null;
+    let bestScore = Number.POSITIVE_INFINITY;
+
+    for (const c of candidatePool) {
+      const distFromLast = c.mi - lastStopMi;
+      const targetDelta = Math.abs(distFromLast - targetInterval);
+
+      // Base score: deviation from target interval
+      let score = targetDelta * 2.0;
+
+      // Heavy penalty for stopping too early (e.g. < 60% of target interval) unless it's the only safe option
+      if (distFromLast < targetInterval * 0.6) {
+        score += (targetInterval * 0.6 - distFromLast) * 5.0;
+      }
+
+      // Reliability bonus (higher reliability reduces penalty)
+      const reliability = c.wp.reliability ?? 50;
+      score -= (reliability - 50) * 0.1;
+
+      // Detour penalty (miles off course)
+      const offCourse = c.wp.offCourseDistanceMi || 0;
+      score += offCourse * 12.0;
+
+      // Resupply bonus (stores/towns provide easy guaranteed refill)
+      if (c.wp.type === 'resupply') {
+        score -= 4.0;
+      }
+
+      // Lookahead check: from candidate c, can we reach another water source or finish?
+      const nextRemaining = sortedCandidates.filter((w) => w.distanceFromStartMi > c.mi + 0.1);
+      if (nextRemaining.length > 0) {
+        const nextDemand = computeWaterDemand(route, c.mi, nextRemaining[0].distanceFromStartMi, o);
+        if (nextDemand > capacity) {
+          score += 15.0;
         }
       }
-      
-      if (nextOnTrackNode) {
-        const distToNext = nextOnTrackNode.mi - node.mi;
-        const waterNeededToNext = distToNext * o.ozPerMile;
-        if (waterLevelOz < waterNeededToNext) {
-          shouldStop = true;
-        }
+
+      if (score < bestScore) {
+        bestScore = score;
+        bestPick = c;
       }
     }
-    
-    if (shouldStop) {
-      chosen.push(node.wp);
-      lastStopMi = node.mi;
+
+    if (!bestPick) {
+      bestPick = candidatePool[candidatePool.length - 1]; // furthest reachable fallback
     }
+
+    chosen.push(bestPick.wp);
+    lastStopMi = bestPick.mi;
+    currentSearchIndex = bestPick.index + 1;
   }
 
   return chosen;
@@ -429,7 +599,8 @@ export function computeFoodCarry(route, opts = {}) {
 
   const anchors = [{ mi: 0, name: 'Start', category: 'grocery' }];
   for (const wp of activeResupplies) {
-    const cat = wp.resupplyCategory || inferResupplyCategory(wp.name, wp.description, wp.tags || {});
+    const cat =
+      wp.resupplyCategory || inferResupplyCategory(wp.name, wp.description, wp.tags || {});
     anchors.push({ mi: wp.distanceFromStartMi, name: wp.name || 'Resupply', category: cat, wp });
   }
   anchors.push({ mi: total, name: 'Finish', category: 'none' });
@@ -570,11 +741,24 @@ export function buildDayPlan(route, opts = {}) {
     const endMi = camp.distanceFromStartMi;
     const waterInfo = nextWaterFrom(endMi);
     const foodInfo = nextFoodFrom(endMi);
-    
+
     const { gainFt, lossFt } = calculateElevation(route.trackPoints, startMi, endMi);
-    const waterOptions = waypoints.filter(w => w.type === 'water' && w.distanceFromStartMi > startMi + 0.05 && w.distanceFromStartMi <= endMi + 0.05 && isReliableWater(w, o.reliableWaterThreshold)).length;
-    const resupplyOptions = waypoints.filter(w => w.type === 'resupply' && w.distanceFromStartMi > startMi + 0.05 && w.distanceFromStartMi <= endMi + 0.05).length;
-    const difficulty = calculateSegmentDifficulty(route.trackPoints, startMi, endMi, { surfaceFactor: o.surfaceFactor });
+    const waterOptions = waypoints.filter(
+      (w) =>
+        w.type === 'water' &&
+        w.distanceFromStartMi > startMi + 0.05 &&
+        w.distanceFromStartMi <= endMi + 0.05 &&
+        isReliableWater(w, o.reliableWaterThreshold),
+    ).length;
+    const resupplyOptions = waypoints.filter(
+      (w) =>
+        w.type === 'resupply' &&
+        w.distanceFromStartMi > startMi + 0.05 &&
+        w.distanceFromStartMi <= endMi + 0.05,
+    ).length;
+    const difficulty = calculateSegmentDifficulty(route.trackPoints, startMi, endMi, {
+      surfaceFactor: o.surfaceFactor,
+    });
 
     return {
       campId: camp.id,
@@ -591,14 +775,32 @@ export function buildDayPlan(route, opts = {}) {
       resupplyOptions,
       difficulty,
       isFinish: false,
+      waterAvailable: camp.waterAvailable || null,
+      waterDetails: camp.waterDetails || '',
+      fee: camp.fee || null,
+      tier: camp.tier || null,
+      landManager: camp.landManager || null,
     };
   };
 
   const finishOption = (startMi) => {
     const { gainFt, lossFt } = calculateElevation(route.trackPoints, startMi, total);
-    const waterOptions = waypoints.filter(w => w.type === 'water' && w.distanceFromStartMi > startMi + 0.05 && w.distanceFromStartMi <= total + 0.05 && isReliableWater(w, o.reliableWaterThreshold)).length;
-    const resupplyOptions = waypoints.filter(w => w.type === 'resupply' && w.distanceFromStartMi > startMi + 0.05 && w.distanceFromStartMi <= total + 0.05).length;
-    const difficulty = calculateSegmentDifficulty(route.trackPoints, startMi, total, { surfaceFactor: o.surfaceFactor });
+    const waterOptions = waypoints.filter(
+      (w) =>
+        w.type === 'water' &&
+        w.distanceFromStartMi > startMi + 0.05 &&
+        w.distanceFromStartMi <= total + 0.05 &&
+        isReliableWater(w, o.reliableWaterThreshold),
+    ).length;
+    const resupplyOptions = waypoints.filter(
+      (w) =>
+        w.type === 'resupply' &&
+        w.distanceFromStartMi > startMi + 0.05 &&
+        w.distanceFromStartMi <= total + 0.05,
+    ).length;
+    const difficulty = calculateSegmentDifficulty(route.trackPoints, startMi, total, {
+      surfaceFactor: o.surfaceFactor,
+    });
 
     return {
       campId: 'finish',
@@ -666,12 +868,21 @@ export function buildDayPlan(route, opts = {}) {
       const foodInfo = nextFoodFrom(targetMi);
       const { gainFt, lossFt } = calculateElevation(route.trackPoints, startMi, targetMi);
       const waterOptions = waypoints.filter(
-        w => w.type === 'water' && w.distanceFromStartMi > startMi + 0.05 && w.distanceFromStartMi <= targetMi + 0.05 && isReliableWater(w, o.reliableWaterThreshold)
+        (w) =>
+          w.type === 'water' &&
+          w.distanceFromStartMi > startMi + 0.05 &&
+          w.distanceFromStartMi <= targetMi + 0.05 &&
+          isReliableWater(w, o.reliableWaterThreshold),
       ).length;
       const resupplyOptions = waypoints.filter(
-        w => w.type === 'resupply' && w.distanceFromStartMi > startMi + 0.05 && w.distanceFromStartMi <= targetMi + 0.05
+        (w) =>
+          w.type === 'resupply' &&
+          w.distanceFromStartMi > startMi + 0.05 &&
+          w.distanceFromStartMi <= targetMi + 0.05,
       ).length;
-      const difficulty = calculateSegmentDifficulty(route.trackPoints, startMi, targetMi, { surfaceFactor: o.surfaceFactor });
+      const difficulty = calculateSegmentDifficulty(route.trackPoints, startMi, targetMi, {
+        surfaceFactor: o.surfaceFactor,
+      });
 
       return {
         campId,
@@ -697,7 +908,7 @@ export function buildDayPlan(route, opts = {}) {
       let minDelta = Infinity;
       const target = startMi + o.targetDailyMiles;
       const maxAllowedDelta = o.targetDailyMiles * 0.45; // Max ~15 miles off target daily miles
-      
+
       for (const c of camps) {
         if (c.distanceFromStartMi > startMi + 0.05) {
           const delta = Math.abs(c.distanceFromStartMi - target);
@@ -707,7 +918,7 @@ export function buildDayPlan(route, opts = {}) {
           }
         }
       }
-      
+
       if (fallbackCamp && minDelta <= maxAllowedDelta) {
         medium = makeOption(fallbackCamp, startMi);
       } else {
@@ -723,9 +934,12 @@ export function buildDayPlan(route, opts = {}) {
     if (daySelection === 'short' && short) chosen = short;
     else if (daySelection === 'long' && long) chosen = long;
     else if (daySelection === 'medium' && medium) chosen = medium;
-    else if (short && (o.forcedCampIds.includes(short.campId) || daySelection === short.campId)) chosen = short;
-    else if (medium && (o.forcedCampIds.includes(medium.campId) || daySelection === medium.campId)) chosen = medium;
-    else if (long && (o.forcedCampIds.includes(long.campId) || daySelection === long.campId)) chosen = long;
+    else if (short && (o.forcedCampIds.includes(short.campId) || daySelection === short.campId))
+      chosen = short;
+    else if (medium && (o.forcedCampIds.includes(medium.campId) || daySelection === medium.campId))
+      chosen = medium;
+    else if (long && (o.forcedCampIds.includes(long.campId) || daySelection === long.campId))
+      chosen = long;
     else chosen = medium || short || long;
 
     days.push({
@@ -751,12 +965,15 @@ export function buildDayPlan(route, opts = {}) {
  * @param {Partial<typeof PLAN_DEFAULTS>} [opts]
  */
 export function buildPlan(route, opts = {}) {
-  const o = { ...PLAN_DEFAULTS, ...opts };
+  const o = resolveOptions(opts, resourceWaypoints(route));
+  const dayPlan = buildDayPlan(route, o);
+  const waterCarry = computeWaterCarry(route, { ...o, dayPlan });
+  const foodCarry = computeFoodCarry(route, o);
   return {
     options: o,
-    waterCarry: computeWaterCarry(route, o),
-    foodCarry: computeFoodCarry(route, o),
-    dayPlan: buildDayPlan(route, o),
+    waterCarry,
+    foodCarry,
+    dayPlan,
   };
 }
 
@@ -780,7 +997,21 @@ export function getActiveStopIds(route, opts) {
   const excludedResupply = new Set(opts.excludedResupplyIds);
   const forcedResupply = new Set(opts.forcedResupplyIds);
 
-  // Filter water candidates
+  // 1. Camps chosen in day plan
+  const campStops = [];
+  const plan = buildPlan(route, opts);
+  for (const d of plan.dayPlan) {
+    if (d.chosen?.campId) {
+      activeIds.add(d.chosen.campId);
+      campStops.push({
+        mi: d.chosen.endMi,
+        name: d.chosen.campName,
+        campId: d.chosen.campId,
+      });
+    }
+  }
+
+  // 2. Filter water candidates
   const waterWpts = waypoints.filter((w) => w.type === 'water');
   const waterCandidates = waterWpts.filter((wp) => {
     if (excludedWater.has(wp.id)) return false;
@@ -799,7 +1030,7 @@ export function getActiveStopIds(route, opts) {
   });
 
   const waterStops = opts.optimizeWaterStops
-    ? optimizeWaterStops(route, [...waterCandidates, ...activeResupplies], opts)
+    ? optimizeWaterStops(route, [...waterCandidates, ...activeResupplies], opts, campStops)
     : waterCandidates;
 
   // Filter water stops by detour
@@ -812,8 +1043,8 @@ export function getActiveStopIds(route, opts) {
   const findEmergencyStretch = (activeStops) => {
     const anchors = [0, ...activeStops.map((s) => s.distanceFromStartMi), total];
     for (let i = 1; i < anchors.length; i++) {
-      const dist = anchors[i] - anchors[i - 1];
-      if (dist * opts.ozPerMile > opts.waterCapacityOz) {
+      const demand = computeWaterDemand(route, anchors[i - 1], anchors[i], opts);
+      if (demand > opts.waterCapacityOz) {
         return { start: anchors[i - 1], end: anchors[i] };
       }
     }
@@ -915,14 +1146,6 @@ export function getActiveStopIds(route, opts) {
     activeIds.add(wp.id);
   }
 
-  // 3. Camp stops (all camps chosen in day plan)
-  const plan = buildPlan(route, opts);
-  for (const d of plan.dayPlan) {
-    if (d.chosen?.campId) {
-      activeIds.add(d.chosen.campId);
-    }
-  }
-
   return activeIds;
 }
 
@@ -934,28 +1157,31 @@ export function getActiveStopIds(route, opts) {
  */
 export function getWaypointsWithSyntheticCamps(route, opts) {
   if (!route) return [];
-  const waypoints = [...route.waypoints];
+  // Strip any persistent synthetic waypoints from the base list
+  const waypoints = (route.waypoints || []).filter(
+    (w) => !w.id?.startsWith('synth-') && !w.isSynthetic,
+  );
 
   const plan = buildPlan(route, opts);
   for (const d of plan.dayPlan) {
-    for (const key of ['short', 'medium', 'long']) {
-      const opt = d.options[key];
-      if (opt?.campId?.startsWith('synth-camp-')) {
-        if (waypoints.some((w) => w.id === opt.campId)) continue;
+    const chosen = d.chosen;
+    if (chosen?.campId?.startsWith('synth-camp-')) {
+      if (waypoints.some((w) => w.id === chosen.campId)) continue;
 
-        const pt = getCoordinatesAtMile(route.trackPoints, opt.endMi);
-        if (pt) {
-          waypoints.push({
-            id: opt.campId,
-            name: `${opt.campName} (${key})`,
-            type: 'camping',
-            lat: pt[0],
-            lon: pt[1],
-            distanceFromStartMi: opt.endMi,
-            description: `Wilderness camping option for Day ${d.day}. Target mileage: ${opt.miles.toFixed(1)} mi.`,
-            reliability: 100,
-          });
-        }
+      const pt = getCoordinatesAtMile(route.trackPoints, chosen.endMi);
+      if (pt) {
+        waypoints.push({
+          id: chosen.campId,
+          name: chosen.campName || `Day ${d.day} Dispersed Camp`,
+          type: 'camping',
+          lat: pt[0],
+          lon: pt[1],
+          distanceFromStartMi: chosen.endMi,
+          description: `Wilderness dispersed camping option for Day ${d.day}.`,
+          reliability: 100,
+          isSynthetic: true,
+          source: 'synthetic',
+        });
       }
     }
   }

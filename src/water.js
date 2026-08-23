@@ -248,7 +248,13 @@ export async function fetchUSGSPercentileStats(siteIds) {
   return statsMap;
 }
 
-export function mergeWaterSources(route, usgsFeatures, osmElements, flowMap = new Map(), statsMap = new Map()) {
+export function mergeWaterSources(
+  route,
+  usgsFeatures,
+  osmElements,
+  flowMap = new Map(),
+  statsMap = new Map(),
+) {
   const { trackPoints } = route;
   const sampled = sampleTrackPoints(trackPoints);
 
@@ -371,4 +377,3 @@ export async function enrichWaterSources(route) {
 
   return mergeWaterSources(route, usgsFeatures, osmElements, flowMap, statsMap);
 }
-

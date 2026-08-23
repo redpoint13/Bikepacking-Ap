@@ -47,11 +47,7 @@ export function calculateSegmentDifficulty(trackPoints, startMi = 0, endMi = nul
   const surfaceFactor = opts.surfaceFactor ?? 1.2;
   const habGradeThreshold = opts.habGradeThreshold ?? 15;
 
-  const segment = getTrackSegmentForMiles(
-    trackPoints,
-    startMi,
-    endMi ?? Number.POSITIVE_INFINITY,
-  );
+  const segment = getTrackSegmentForMiles(trackPoints, startMi, endMi ?? Number.POSITIVE_INFINITY);
 
   if (!segment || segment.length < 2) {
     return {
@@ -127,11 +123,12 @@ export function calculateSegmentDifficulty(trackPoints, startMi = 0, endMi = nul
   const lossFt = Math.round(lossMeters * 3.28084);
   const distMi = Number(totalDistanceMiles.toFixed(1));
   const hillinessFtPerMi = distMi > 0 ? Math.round(gainFt / distMi) : 0;
-  const avgClimbGradePct = climbSampleCount > 0 ? Number((totalClimbGradeSum / climbSampleCount).toFixed(1)) : 0;
+  const avgClimbGradePct =
+    climbSampleCount > 0 ? Number((totalClimbGradeSum / climbSampleCount).toFixed(1)) : 0;
 
   // 2. Compute Difficulty Score
   // D = (Distance * surfaceFactor) + (Gain / 500) * (1 + 0.05 * avgClimbGradePct)
-  const scoreRaw = (distMi * surfaceFactor) + (gainFt / 500) * (1 + 0.05 * avgClimbGradePct);
+  const scoreRaw = distMi * surfaceFactor + (gainFt / 500) * (1 + 0.05 * avgClimbGradePct);
   const difficultyScore = Number(scoreRaw.toFixed(1));
 
   let difficultyRating = { label: 'Easy', cls: 'easy', badge: '🟢 Easy' };

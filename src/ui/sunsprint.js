@@ -129,7 +129,10 @@ export function updateSunsprintDisplay(container, route, currentMile, paceMph) {
     }
   }
 
-  if (result.status === 'alert' && (lastSunsprintStatus === 'ok' || lastSunsprintStatus === 'warning')) {
+  if (
+    result.status === 'alert' &&
+    (lastSunsprintStatus === 'ok' || lastSunsprintStatus === 'warning')
+  ) {
     if (typeof navigator !== 'undefined' && navigator.vibrate) {
       try {
         navigator.vibrate([300, 200, 300]);

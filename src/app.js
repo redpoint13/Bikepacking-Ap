@@ -33,7 +33,13 @@ import {
   highlightMapSegment,
 } from './map.js';
 import { highlightProfileSegment } from './ui/elevationProfile.js';
-import { PLAN_DEFAULTS, buildPlan, optimizeWaterStops, getActiveStopIds, getWaypointsWithSyntheticCamps } from './plan.js';
+import {
+  PLAN_DEFAULTS,
+  buildPlan,
+  optimizeWaterStops,
+  getActiveStopIds,
+  getWaypointsWithSyntheticCamps,
+} from './plan.js';
 import { renderOSMSearchResults, renderPlanningView, updatePlanningView } from './planning.js';
 import { enrichResupplySources } from './resupply.js';
 import {
@@ -56,9 +62,14 @@ import { searchOSMResources } from './api.js';
 import { appState, getPlanDefaults, persistUserPreferences } from './state.js';
 import { updateResourceCards as updateResourceCardsUI } from './ui/radarCards.js';
 import { renderElevationProfile } from './ui/elevationProfile.js';
-import { setSunsprintTargetMile, getSunsprintTargetMile, getCurrentEtaDate } from './ui/sunsprint.js';
-
-
+import {
+  setSunsprintTargetMile,
+  getSunsprintTargetMile,
+  getCurrentEtaDate,
+} from './ui/sunsprint.js';
+import { openRouteLibraryModal } from './ui/routeLibraryModal.js';
+import { openWaypointEditorModal } from './ui/waypointEditorModal.js';
+import { getAllRoutes, getRouteById, setActiveRouteId, saveRouteToLibrary } from './storage.js';
 
 // ---------------------------------------------------------------------------
 // Module state
@@ -107,7 +118,20 @@ let lastSearchResults = [];
  * Synchronises all visual map elements (markers, highlighted stops,
  * day segment tracks, and day boundary labels) with currentRoute and planOptions.
  */
-function syncMapState() {
+let syncMapTimeout = null;
+function syncMapState(immediate = false) {
+  if (!currentMap || !currentRoute) return;
+  if (!immediate) {
+    if (syncMapTimeout) clearTimeout(syncMapTimeout);
+    syncMapTimeout = setTimeout(() => {
+      _executeSyncMapState();
+    }, 40);
+    return;
+  }
+  _executeSyncMapState();
+}
+
+function _executeSyncMapState() {
   if (!currentMap || !currentRoute) return;
   const activeStopIds = getActiveStopIds(currentRoute, planOptions);
   const wpts = getWaypointsWithSyntheticCamps(currentRoute, planOptions);
@@ -122,8 +146,6 @@ let currentMode = 'planning';
 
 /** @type {GPSManager | null} */
 let gpsManager = null;
-
-
 
 /**
  * Updates the route stats bar on top of the map section based on the current plan options.
@@ -165,8 +187,6 @@ function updateRouteStats(container, route, options) {
 
 /** @type {typeof PLAN_DEFAULTS} */
 let planOptions = getPlanDefaults();
-
-
 
 /**
  * Handles selecting a specific camp option (short, medium, long) for a day.
@@ -341,6 +361,7 @@ export function renderApp(container) {
           <span class="offline-chip" hidden aria-hidden="true" aria-live="polite"
             role="status">Offline</span>
           <button class="sync-map-btn" id="sync-map-btn" type="button" hidden>Sync Map</button>
+          <button class="header-change-route-btn" id="header-change-route-btn" type="button" hidden>Change Route</button>
           <span class="status-chip status-chip--idle" aria-label="Status: no route loaded">
             No Route
           </span>
@@ -440,11 +461,14 @@ export function renderApp(container) {
       <!-- Map section — hidden until a route is loaded -->
       <section class="map-section" id="map-section" aria-label="Route map" hidden style="position: relative;">
         <div id="map" class="map-container"></div>
-        <div class="map-overlay-controls" style="position: absolute; bottom: 8px; left: 8px; z-index: 10; background: var(--md-sys-color-surface-container, #ffffff); padding: 8px 12px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.3); display: flex; flex-direction: column; gap: 6px; font-size: 11px; font-weight: 600; color: var(--md-sys-color-on-surface, #000000); border: 1px solid var(--md-sys-color-outline-variant);">
+        <div class="map-overlay-controls" style="position: absolute; top: 12px; left: 12px; z-index: 10; background: var(--md-sys-color-surface-container, #ffffff); padding: 8px 12px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.3); display: flex; flex-direction: column; gap: 6px; font-size: 11px; font-weight: 600; color: var(--md-sys-color-on-surface, #000000); border: 1px solid var(--md-sys-color-outline-variant);">
           <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; margin: 0;">
             <input type="checkbox" id="map-toggle-miles" checked />
             Mile Markers
           </label>
+          <button type="button" id="btn-add-custom-poi" class="btn-add-poi-floating" style="margin-top: 2px;">
+            ＋ Add Waypoint
+          </button>
         </div>
         <div class="route-stats" id="route-stats" aria-label="Route summary"></div>
         <div id="elevation-profile-container" style="width: 100%;"></div>
@@ -624,18 +648,18 @@ function wireEvents(container) {
       const modal = container.querySelector('#sync-progress-modal');
       const text = container.querySelector('#sync-progress-text');
       const fill = container.querySelector('#sync-progress-fill');
-      
+
       if (!currentRoute) return;
-      
+
       modal.hidden = false;
       syncMapBtn.disabled = true;
-      
+
       await syncOfflineMap(currentRoute, (current, total) => {
         const pct = (current / total) * 100;
         fill.style.width = `${pct}%`;
         text.textContent = `${current} / ${total} tiles downloaded`;
       });
-      
+
       setTimeout(() => {
         modal.hidden = true;
         syncMapBtn.disabled = false;
@@ -644,10 +668,113 @@ function wireEvents(container) {
     });
   }
 
-  // FAB -> trigger file picker
-  fab.addEventListener('click', () => {
-    fileInput.accept = '.gpx,.kml,.json';
-    fileInput.click();
+  // Route Library Helper
+  function openLibrary() {
+    openRouteLibraryModal({
+      onSelectRoute: async (routeId) => {
+        const record = await getRouteById(routeId);
+        if (!record) return;
+        await setActiveRouteId(routeId);
+        if (record.options) {
+          planOptions = { ...getPlanDefaults(), ...record.options };
+          persistUserPreferences(planOptions);
+        } else {
+          planOptions = getPlanDefaults();
+        }
+        const route = parseGPX(record.gpxText);
+        if (record.waypoints?.length) {
+          route.waypoints = sanitizeWaypoints(record.waypoints);
+        }
+        applyRoute(container, route, true);
+        kickoffWaterEnrichment(container, route);
+        kickoffCampEnrichment(container, route);
+        kickoffResupplyEnrichment(container, route);
+      },
+      onUploadGPX: async (file) => {
+        setLoadingState(container, true);
+        try {
+          const text = await file.text();
+          if (file.name.endsWith('.json')) {
+            const bundle = JSON.parse(text);
+            if (bundle.version && bundle.gpxText) {
+              const route = parseGPX(bundle.gpxText);
+              if (bundle.waypoints) route.waypoints = sanitizeWaypoints(bundle.waypoints);
+              const routeId = await saveRouteToLibrary({
+                name:
+                  bundle.name ||
+                  (bundle.filename
+                    ? bundle.filename.replace(/\.gpx$/i, '')
+                    : file.name.replace(/\.json$/i, '')),
+                filename: bundle.filename || file.name,
+                gpxText: bundle.gpxText,
+                totalDistanceMiles: route.totalDistanceMiles,
+                waypoints: route.waypoints,
+                options: bundle.options || null,
+              });
+              await setActiveRouteId(routeId);
+              if (bundle.options) {
+                planOptions = { ...getPlanDefaults(), ...bundle.options };
+                persistUserPreferences(planOptions);
+              }
+              applyRoute(container, route, true);
+              return;
+            }
+          }
+          const route = parseGPX(text);
+          const routeId = await saveRouteToLibrary({
+            name: file.name.replace(/\.gpx$/i, ''),
+            filename: file.name,
+            gpxText: text,
+            totalDistanceMiles: route.totalDistanceMiles,
+            waypoints: route.waypoints || [],
+          });
+          await setActiveRouteId(routeId);
+          applyRoute(container, route);
+          kickoffWaterEnrichment(container, route);
+          kickoffCampEnrichment(container, route);
+          kickoffResupplyEnrichment(container, route);
+        } catch (err) {
+          showError(container, err.message);
+        } finally {
+          setLoadingState(container, false);
+        }
+      },
+      onImportURL: async (url) => {
+        setLoadingState(container, true);
+        try {
+          const route = await importFromURL(url);
+          const gpxStub = `<gpx version="1.1" creator="BPNav"><trk><name>${route.name}</name><trkseg>${route.trackPoints.map(([lat, lon]) => `<trkpt lat="${lat}" lon="${lon}"/>`).join('')}</trkseg></trk></gpx>`;
+          const routeId = await saveRouteToLibrary({
+            name: route.name,
+            filename: `${route.name.replace(/\s+/g, '_')}.gpx`,
+            gpxText: gpxStub,
+            totalDistanceMiles: route.totalDistanceMiles,
+            waypoints: route.waypoints || [],
+          });
+          await setActiveRouteId(routeId);
+          applyRoute(container, route);
+          kickoffWaterEnrichment(container, route);
+          kickoffCampEnrichment(container, route);
+          kickoffResupplyEnrichment(container, route);
+        } catch (err) {
+          showError(container, err.message);
+          throw err;
+        } finally {
+          setLoadingState(container, false);
+        }
+      },
+    });
+  }
+
+  // Delegated click handler for opening Route Library from any trigger (header, fab, planning toolbar)
+  container.addEventListener('click', (e) => {
+    const trigger = e.target.closest(
+      '#load-route-btn, #header-change-route-btn, [data-action="open-library"], [data-action="change-route"]',
+    );
+    if (trigger) {
+      e.preventDefault();
+      openLibrary();
+    }
   });
 
   // Import Plan link -> trigger JSON-specific file picker
@@ -684,7 +811,7 @@ function wireEvents(container) {
           // Restore route and enrichment
           const route = parseGPX(bundle.gpxText);
           if (bundle.waypoints) {
-            route.waypoints = bundle.waypoints;
+            route.waypoints = sanitizeWaypoints(bundle.waypoints);
             await saveEnrichment(route.waypoints).catch(() => {});
           }
 
@@ -1038,6 +1165,87 @@ function wireEvents(container) {
     btn.style.color = 'var(--md-sys-color-on-surface-variant)';
   });
 
+  function handleSaveCustomWaypoint(wpt) {
+    if (!currentRoute) return;
+    const idx = currentRoute.waypoints.findIndex((w) => w.id === wpt.id);
+    if (idx >= 0) {
+      currentRoute.waypoints[idx] = wpt;
+    } else {
+      currentRoute.waypoints.push(wpt);
+    }
+    currentRoute.waypoints.sort((a, b) => a.distanceFromStartMi - b.distanceFromStartMi);
+
+    updateResourceCards(container, currentRoute);
+    updatePlanningView(container.querySelector('#planning-view'), currentRoute, planOptions);
+    updateRouteStats(container, currentRoute, planOptions);
+    syncMapState();
+    if (currentMap && wpt.lon && wpt.lat) {
+      currentMap.flyTo({ center: [wpt.lon, wpt.lat], zoom: Math.max(currentMap.getZoom(), 12) });
+    }
+    saveEnrichment(currentRoute.waypoints).catch(() => {});
+  }
+
+  function handleDeleteCustomWaypoint(wptId) {
+    if (!currentRoute) return;
+    currentRoute.waypoints = currentRoute.waypoints.filter((w) => w.id !== wptId);
+
+    updateResourceCards(container, currentRoute);
+    updatePlanningView(container.querySelector('#planning-view'), currentRoute, planOptions);
+    updateRouteStats(container, currentRoute, planOptions);
+    syncMapState();
+    if (currentMap && wpt.lon && wpt.lat) {
+      currentMap.flyTo({ center: [wpt.lon, wpt.lat], zoom: Math.max(currentMap.getZoom(), 12) });
+    }
+    saveEnrichment(currentRoute.waypoints).catch(() => {});
+  }
+
+  const addPoiBtn = container.querySelector('#btn-add-custom-poi');
+  if (addPoiBtn) {
+    addPoiBtn.addEventListener('click', () => {
+      if (!currentRoute) return;
+      openWaypointEditorModal({
+        route: currentRoute,
+        defaultMile: 0,
+        defaultCoords: currentRoute.startPoint || { lat: 0, lon: 0 },
+        onSave: handleSaveCustomWaypoint,
+        onDelete: handleDeleteCustomWaypoint,
+      });
+    });
+  }
+
+  window.addEventListener('bpnav-profile-click', (e) => {
+    if (!currentRoute) return;
+    const { mile } = e.detail || {};
+    const pt = getCoordinatesAtMile(currentRoute.trackPoints, mile || 0);
+    openWaypointEditorModal({
+      route: currentRoute,
+      defaultMile: mile || 0,
+      defaultCoords: pt ? { lat: pt[0], lon: pt[1] } : null,
+      onSave: handleSaveCustomWaypoint,
+      onDelete: handleDeleteCustomWaypoint,
+    });
+  });
+
+  container.addEventListener(
+    'click',
+    (e) => {
+      const editBtn = e.target.closest('[data-action="edit-waypoint"]');
+      if (editBtn && currentRoute) {
+        const id = editBtn.getAttribute('data-id');
+        const targetWpt = currentRoute.waypoints.find((w) => w.id === id);
+        if (targetWpt) {
+          openWaypointEditorModal({
+            waypoint: targetWpt,
+            route: currentRoute,
+            onSave: handleSaveCustomWaypoint,
+            onDelete: handleDeleteCustomWaypoint,
+          });
+        }
+      }
+    },
+    { capture: true },
+  );
+
   // Listen for map-toggle-miles changes
   const toggleMilesCheckbox = container.querySelector('#map-toggle-miles');
   toggleMilesCheckbox.addEventListener('change', (e) => {
@@ -1145,6 +1353,19 @@ function applyMode(container) {
  * @param {import('./gpx.js').RouteContext} route
  * @param {boolean} [skipEnrichment=false]
  */
+function sanitizeWaypoints(wpts) {
+  if (!Array.isArray(wpts)) return [];
+  return wpts.filter(
+    (w) =>
+      w &&
+      w.lat != null &&
+      w.lon != null &&
+      !w.id?.startsWith('synth-') &&
+      !w.isSynthetic &&
+      !w.name?.match(/Dispersed Camp \((short|med|long|mi)/i),
+  );
+}
+
 function applyRoute(container, route, skipEnrichment = false) {
   currentRoute = route;
 
@@ -1152,7 +1373,7 @@ function applyRoute(container, route, skipEnrichment = false) {
     gpsManager.stop();
   }
   gpsManager = new GPSManager(route);
-  
+
   if (radarController) {
     radarController.stop();
   }
@@ -1171,7 +1392,12 @@ function applyRoute(container, route, skipEnrichment = false) {
     if (flooredMile > 0 && flooredMile % 5 === 0 && flooredMile > lastSpokenMile) {
       lastSpokenMile = flooredMile;
       if (isVoiceEnabled()) {
-        const report = generateStatusReport(lastCurrentMile, sunsprintTargetMile, currentEtaDate, currentNextResource);
+        const report = generateStatusReport(
+          lastCurrentMile,
+          sunsprintTargetMile,
+          currentEtaDate,
+          currentNextResource,
+        );
         speak(report);
       }
     }
@@ -1260,7 +1486,7 @@ function updateStatusChip(container, route) {
   chip.className = 'status-chip status-chip--active';
   chip.textContent = route.name.length > 18 ? `${route.name.slice(0, 16)}…` : route.name;
   chip.setAttribute('aria-label', `Route loaded: ${route.name}`);
-  
+
   const syncBtn = container.querySelector('#sync-map-btn');
   if (syncBtn) {
     syncBtn.hidden = false;
@@ -1318,7 +1544,7 @@ export function updateSunsprintDisplay(container, route, currentMile, paceMph) {
   if (ghostBtn) ghostBtn.hidden = false;
 
   const maxMiles = route.totalDistanceMiles;
-  
+
   // Set slider min and max
   if (targetSlider) {
     const currentSliderMin = Number(targetSlider.min);
@@ -1326,7 +1552,7 @@ export function updateSunsprintDisplay(container, route, currentMile, paceMph) {
     if (currentSliderMin !== newMin) {
       targetSlider.min = newMin;
     }
-    
+
     if (Number(targetSlider.max) !== Math.ceil(maxMiles)) {
       targetSlider.max = Math.ceil(maxMiles);
     }
@@ -1344,7 +1570,7 @@ export function updateSunsprintDisplay(container, route, currentMile, paceMph) {
   const destinationName = `Mile ${sunsprintTargetMile.toFixed(1)}`;
   const now = new Date();
   const result = calculateDaylightBuffer(route, currentMile, paceMph, sunsprintTargetMile, now);
-  
+
   currentEtaDate = result.eta;
 
   const formatTime = (date) => date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -1354,7 +1580,7 @@ export function updateSunsprintDisplay(container, route, currentMile, paceMph) {
   card.querySelector('#sunsprint-sunset').textContent = formatTime(result.sunset);
   card.querySelector('#sunsprint-eta-val').textContent = formattedEta;
   card.querySelector('#sunsprint-eta-marker').hidden = false;
-  
+
   if (ghostEtaVal) {
     ghostEtaVal.textContent = formattedEta;
   }
@@ -1380,9 +1606,16 @@ export function updateSunsprintDisplay(container, route, currentMile, paceMph) {
   }
 
   // Haptic alert on transition to red alert (<30m)
-  if (result.status === 'alert' && (lastSunsprintStatus === 'ok' || lastSunsprintStatus === 'warning')) {
+  if (
+    result.status === 'alert' &&
+    (lastSunsprintStatus === 'ok' || lastSunsprintStatus === 'warning')
+  ) {
     if (typeof navigator !== 'undefined' && navigator.vibrate) {
-      try { navigator.vibrate([300, 200, 300]); } catch (e) { console.warn(e); }
+      try {
+        navigator.vibrate([300, 200, 300]);
+      } catch (e) {
+        console.warn(e);
+      }
     }
   }
   lastSunsprintStatus = result.status;
@@ -1410,7 +1643,16 @@ function showMapSection(container, route) {
   updateRouteStats(container, route, planOptions);
   renderElevationProfile(container.querySelector('#elevation-profile-container'), route);
 
-  // Update FAB to "Change Route"
+  // Update Header & FAB for loaded route
+  const headerChangeBtnEl = container.querySelector('#header-change-route-btn');
+  if (headerChangeBtnEl) headerChangeBtnEl.hidden = false;
+
+  const fabZoneEl = container.querySelector('.fab-zone');
+  if (fabZoneEl) fabZoneEl.setAttribute('data-has-route', 'true');
+
+  const fabLinksEl = container.querySelector('.fab-links');
+  if (fabLinksEl) fabLinksEl.hidden = true;
+
   const fab = container.querySelector('.fab');
   fab.setAttribute('aria-label', 'Load a different route');
   fab.querySelector('.fab-label').textContent = 'Change Route';
@@ -1493,6 +1735,33 @@ function showError(container, message) {
  */
 async function tryRestoreRoute(container) {
   try {
+    const all = await getAllRoutes().catch(() => []);
+    if (all.length === 0) {
+      // Auto-seed Coconino Loop demo route if library is empty
+      try {
+        const res = await fetch('./Coconino_Loop.gpx');
+        if (res.ok) {
+          const text = await res.text();
+          const route = parseGPX(text);
+          const routeId = await saveRouteToLibrary({
+            id: 'coconino-loop-demo',
+            name: 'Coconino Loop',
+            filename: 'Coconino_Loop.gpx',
+            gpxText: text,
+            totalDistanceMiles: route.totalDistanceMiles,
+            waypoints: route.waypoints || [],
+          });
+          await setActiveRouteId(routeId);
+          applyRoute(container, route);
+          kickoffWaterEnrichment(container, route);
+          kickoffCampEnrichment(container, route);
+          kickoffResupplyEnrichment(container, route);
+          return;
+        }
+      } catch (_) {}
+    }
+  } catch (_) {}
+  try {
     const stored = await loadRoute();
     if (!stored) return;
 
@@ -1510,7 +1779,7 @@ async function tryRestoreRoute(container) {
     // for a network round-trip — critical when the device is offline.
     const cachedWaypoints = await loadEnrichment().catch(() => null);
     if (cachedWaypoints?.length) {
-      route.waypoints = cachedWaypoints;
+      route.waypoints = sanitizeWaypoints(cachedWaypoints);
       updateResourceCards(container, route);
       updatePlanningView(container.querySelector('#planning-view'), route, planOptions);
       updateRouteStats(container, route, planOptions);

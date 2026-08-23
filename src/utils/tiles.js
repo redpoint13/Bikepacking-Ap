@@ -21,8 +21,7 @@ export function lon2tile(lon, zoom) {
 export function lat2tile(lat, zoom) {
   const latRad = (lat * Math.PI) / 180;
   return Math.floor(
-    ((1.0 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2.0) *
-      Math.pow(2, zoom),
+    ((1.0 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2.0) * Math.pow(2, zoom),
   );
 }
 
@@ -44,7 +43,7 @@ export function getTilesForRoute(route, minZoom, maxZoom) {
   // For very long routes, checking every single track point is overkill.
   // We can sample points (e.g. every 10th point) since the 1-tile buffer
   // ensures continuous coverage at these zoom levels.
-  const sampleRate = 10; 
+  const sampleRate = 10;
 
   for (let z = minZoom; z <= maxZoom; z++) {
     for (let i = 0; i < trackPoints.length; i += sampleRate) {

@@ -1,11 +1,13 @@
 /**
  * enrichment.js — Waypoint metadata auto-enrichment & classification helper.
  *
- * Classifies waypoints into 4-tier resupply categories, camp tiers, and water reliability
- * scores from OSM tags, names, descriptions, and user overrides.
+ * Classifies waypoints into 4-tier resupply categories, camp tiers, water availability,
+ * and fee structures from OSM tags, names, descriptions, and user overrides.
  *
  * @module enrichment
  */
+
+import { osmCampWater, osmCampFee } from './camp.js';
 
 /**
  * 4-Tier Resupply Categories:
@@ -34,7 +36,10 @@ export function inferResupplyCategory(name = '', description = '', tags = {}) {
   if (tags && (tags.shop === 'supermarket' || tags.shop === 'grocery' || tags.shop === 'general')) {
     return 'grocery';
   }
-  if (tags && (tags.amenity === 'fuel' || tags.shop === 'convenience' || tags.amenity === 'truck_stop')) {
+  if (
+    tags &&
+    (tags.amenity === 'fuel' || tags.shop === 'convenience' || tags.amenity === 'truck_stop')
+  ) {
     return 'cstore';
   }
   if (
@@ -121,26 +126,40 @@ export function inferCampTier(name = '', description = '', distanceFromStartMi =
   if (text.includes('short')) return 'short';
   if (text.includes('medium')) return 'medium';
   if (text.includes('long')) return 'long';
-  if (text.includes('dispersed') || text.includes('blm') || text.includes('usfs') || text.includes('primitive')) {
+  if (
+    text.includes('dispersed') ||
+    text.includes('blm') ||
+    text.includes('usfs') ||
+    text.includes('primitive')
+  ) {
     return 'dispersed';
   }
   return 'medium';
 }
 
 /**
- * Enrich a waypoint with 4-tier resupply category, camp tier, default hours, and notes.
+ * Enrich a waypoint with 4-tier resupply category, camp tier, water availability, fees, default hours, and notes.
  * @param {import('./gpx.js').Waypoint} wp
  * @returns {import('./gpx.js').Waypoint}
  */
 export function enrichWaypointMetadata(wp) {
   const resupplyCategory =
     wp.type === 'resupply' ? inferResupplyCategory(wp.name, wp.description, wp.tags || {}) : 'none';
-  const campTier = wp.type === 'camping' ? inferCampTier(wp.name, wp.description, wp.distanceFromStartMi) : null;
+  const campTier =
+    wp.type === 'camping' ? inferCampTier(wp.name, wp.description, wp.distanceFromStartMi) : null;
+  const campWater =
+    wp.type === 'camping' ? osmCampWater(wp.tags || {}, wp.name, wp.description) : null;
+  const campFee = wp.type === 'camping' ? osmCampFee(wp.tags || {}, wp.name, wp.description) : null;
 
   return {
     ...wp,
     resupplyCategory: wp.resupplyCategory || resupplyCategory,
     campTier: wp.campTier || campTier,
+    waterAvailable:
+      wp.waterAvailable ||
+      (campWater?.waterAvailable !== 'unknown' ? campWater?.waterAvailable : null),
+    waterDetails: wp.waterDetails || campWater?.waterDetails || '',
+    fee: wp.fee || campFee || null,
     hours: wp.hours || (wp.type === 'resupply' ? '6:00 AM - 9:00 PM' : null),
     phone: wp.phone || null,
     notes: wp.notes || '',
