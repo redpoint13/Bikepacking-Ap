@@ -175,33 +175,10 @@ export async function fetchOSMWater(bounds) {
 // ---------------------------------------------------------------------------
 
 /**
- * Merges USGS and OSM water sources with existing GPX water waypoints.
- *
- * Rules:
- * - External sources are filtered to within ROUTE_PROXIMITY_MI of the route.
- * - Sources within DEDUP_THRESHOLD_MI of an existing waypoint are skipped
- *   (GPX user-named waypoints take priority).
- * - Result is sorted by distanceFromStartMi.
- *
- * @param {import('./gpx.js').RouteContext} route
- * @param {object[]} usgsFeatures  - Raw USGS GeoJSON features
- * @param {object[]} osmElements   - Raw OSM elements
- * @returns {import('./gpx.js').Waypoint[]}
- */
-/**
- * Merges USGS and OSM water sources with existing GPX water waypoints.
- *
- * Rules:
- * - External sources are filtered to within ROUTE_PROXIMITY_MI of the route.
- * - Sources within DEDUP_THRESHOLD_MI of an existing waypoint are skipped
- *   (GPX user-named waypoints take priority).
- * - Result is sorted by distanceFromStartMi.
- *
- * @param {import('./gpx.js').RouteContext} route
- * @param {object[]} usgsFeatures  - Raw USGS GeoJSON features
- * @param {object[]} osmElements   - Raw OSM elements
- * @param {Map<string, number>} [flowMap] - Real-time flow data (siteId -> cfs)
- * @returns {import('./gpx.js').Waypoint[]}
+ * Classifies a stream gauge's real-time discharge against historical percentiles.
+ * @param {number} currentFlow - Current flow rate in cubic feet per second (cfs)
+ * @param {{ p10?: number, p25?: number, p75?: number, p90?: number }} [stats={}] - Historical percentile thresholds
+ * @returns {string} Seasonal flow status description
  */
 export function classifyFlowPercentile(currentFlow, stats = {}) {
   if (currentFlow == null || !Number.isFinite(currentFlow)) return 'Unknown';
@@ -248,6 +225,22 @@ export async function fetchUSGSPercentileStats(siteIds) {
   return statsMap;
 }
 
+/**
+ * Merges USGS and OSM water sources with existing GPX water waypoints.
+ *
+ * Rules:
+ * - External sources are filtered to within ROUTE_PROXIMITY_MI of the route.
+ * - Sources within DEDUP_THRESHOLD_MI of an existing waypoint are skipped
+ *   (GPX user-named waypoints take priority).
+ * - Result is sorted by distanceFromStartMi.
+ *
+ * @param {import('./gpx.js').RouteContext} route
+ * @param {object[]} usgsFeatures - Raw USGS GeoJSON features
+ * @param {object[]} osmElements - Raw OSM elements
+ * @param {Map<string, number>} [flowMap] - Real-time flow data (siteId -> cfs)
+ * @param {Map<string, object>} [statsMap] - Historical percentile stats (siteId -> stats)
+ * @returns {import('./gpx.js').Waypoint[]}
+ */
 export function mergeWaterSources(
   route,
   usgsFeatures,

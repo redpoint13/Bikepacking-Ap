@@ -13,7 +13,7 @@ import {
   getCoordinatesAtMile,
   getTrackSegmentForMiles,
   haversineDistance,
-  nearestTrackPointIndex,
+
 } from './gpx.js';
 
 // ---------------------------------------------------------------------------

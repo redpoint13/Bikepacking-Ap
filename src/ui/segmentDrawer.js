@@ -7,8 +7,6 @@
  * @module ui/segmentDrawer
  */
 
-import { formatDuration } from '../analytics.js';
-
 let activeDrawerEl = null;
 
 /**
