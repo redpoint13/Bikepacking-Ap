@@ -132,7 +132,7 @@ export function renderElevationProfile(container, route, onHover = null) {
 
         // Find closest sample
         let closest = samples[0];
-        let minDist = Infinity;
+        let minDist = Number.POSITIVE_INFINITY;
         for (const s of samples) {
           const d = Math.abs(s.distanceMi - targetMi);
           if (d < minDist) {
@@ -170,7 +170,7 @@ export function renderElevationProfile(container, route, onHover = null) {
         const targetMi = ratio * totalMi;
 
         let closest = samples[0];
-        let minDist = Infinity;
+        let minDist = Number.POSITIVE_INFINITY;
         for (const s of samples) {
           const d = Math.abs(s.distanceMi - targetMi);
           if (d < minDist) {

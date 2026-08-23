@@ -9,7 +9,7 @@
  * @returns {number}
  */
 export function lon2tile(lon, zoom) {
-  return Math.floor(((lon + 180) / 360) * Math.pow(2, zoom));
+  return Math.floor(((lon + 180) / 360) * 2 ** zoom);
 }
 
 /**
@@ -21,7 +21,7 @@ export function lon2tile(lon, zoom) {
 export function lat2tile(lat, zoom) {
   const latRad = (lat * Math.PI) / 180;
   return Math.floor(
-    ((1.0 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2.0) * Math.pow(2, zoom),
+    ((1.0 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2.0) * 2 ** zoom,
   );
 }
 

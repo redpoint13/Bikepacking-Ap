@@ -12,10 +12,10 @@
  * @module plan
  */
 
-import { isReliableWater } from './triplog.js';
-import { getCoordinatesAtMile, calculateElevation } from './gpx.js';
-import { inferResupplyCategory } from './enrichment.js';
 import { calculateSegmentDifficulty } from './difficulty.js';
+import { inferResupplyCategory } from './enrichment.js';
+import { calculateElevation, getCoordinatesAtMile } from './gpx.js';
+import { isReliableWater } from './triplog.js';
 
 // ---------------------------------------------------------------------------
 // Defaults — all overridable from the Planning UI
@@ -905,7 +905,7 @@ export function buildDayPlan(route, opts = {}) {
     if (!short && !medium && !long) {
       // Find the camp closest to the target daily mileage to minimize stretching/shrinking the day
       let fallbackCamp = null;
-      let minDelta = Infinity;
+      let minDelta = Number.POSITIVE_INFINITY;
       const target = startMi + o.targetDailyMiles;
       const maxAllowedDelta = o.targetDailyMiles * 0.45; // Max ~15 miles off target daily miles
 

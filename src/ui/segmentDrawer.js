@@ -34,9 +34,7 @@ export function openSegmentDrawer(analytics, callbacks = {}) {
     : '';
 
   const habSection =
-    analytics.difficulty &&
-    analytics.difficulty.hikeABike &&
-    analytics.difficulty.hikeABike.distanceMi > 0
+    analytics.difficulty?.hikeABike && analytics.difficulty.hikeABike.distanceMi > 0
       ? `<div class="segment-drawer__alert segment-drawer__alert--warning">
           <strong>⚠️ Hike-a-Bike Alert:</strong> ${analytics.difficulty.hikeABike.distanceMi} mi predicted HAB 
           (${analytics.difficulty.hikeABike.percent}% of segment · ${analytics.difficulty.hikeABike.pitchCount} steep pitches ≥15%)
@@ -125,9 +123,9 @@ export function openSegmentDrawer(analytics, callbacks = {}) {
   activeDrawerEl = container;
 
   // Event handlers
-  container.querySelectorAll('[data-action="close-drawer"]').forEach((btn) => {
+  for (const btn of container.querySelectorAll('[data-action="close-drawer"]')) {
     btn.addEventListener('click', closeSegmentDrawer);
-  });
+  }
 
   const copyBtn = container.querySelector('#btn-segment-copy');
   if (copyBtn) {

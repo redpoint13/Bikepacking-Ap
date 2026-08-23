@@ -332,7 +332,8 @@ export function generateStopChecklists(route, plan) {
         items.push({
           id: `${stop.id}-buy-meals`,
           label: `Buy ${mealsToBuy} camp dinner/breakfast meals for ${foodLegDist.toFixed(1)} mi to ${nextResupplyTarget}`,
-          detail: `Look for high calorie-to-weight foods (ramen, instant potatoes, tuna/salmon pouches, freeze-dried).`,
+          detail:
+            'Look for high calorie-to-weight foods (ramen, instant potatoes, tuna/salmon pouches, freeze-dried).',
           checked: false,
         });
 

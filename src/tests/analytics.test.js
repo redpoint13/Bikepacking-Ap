@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { computeSegmentAnalytics, buildDaySegmentAnalytics, formatDuration } from '../analytics.js';
+import { describe, expect, it } from 'vitest';
+import { buildDaySegmentAnalytics, computeSegmentAnalytics, formatDuration } from '../analytics.js';
 
 describe('analytics.js', () => {
   it('formats duration correctly', () => {

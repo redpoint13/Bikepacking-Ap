@@ -77,8 +77,8 @@ async function migrateV1IfNeeded(db) {
     req.onerror = () => res(null);
   });
 
-  if (v1Route && v1Route.gpxText) {
-    const routeId = 'route-' + Date.now();
+  if (v1Route?.gpxText) {
+    const routeId = `route-${Date.now()}`;
     const routeRecord = {
       id: routeId,
       name: v1Route.filename ? v1Route.filename.replace(/\.gpx$/i, '') : 'Saved Route',
@@ -168,7 +168,7 @@ export async function getRouteById(id) {
  */
 export async function saveRouteToLibrary(routeData) {
   const db = await openDB();
-  const id = routeData.id || 'route-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+  const id = routeData.id || `route-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const record = {
     id,
     name: routeData.name || routeData.filename || 'Untitled Route',

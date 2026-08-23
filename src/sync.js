@@ -63,7 +63,7 @@ export async function syncOfflineMap(route, onProgress) {
   }
 
   // 3. Pre-cache weather forecasts for route waypoints
-  if (route.waypoints && route.waypoints.length) {
+  if (route.waypoints?.length) {
     const sampleWps = route.waypoints.slice(0, 5);
     for (const wp of sampleWps) {
       try {

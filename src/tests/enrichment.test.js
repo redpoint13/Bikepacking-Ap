@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { inferResupplyCategory, inferCampTier, enrichWaypointMetadata } from '../enrichment.js';
+import { enrichWaypointMetadata, inferCampTier, inferResupplyCategory } from '../enrichment.js';
 
 describe('enrichment helpers', () => {
   it('infers 4-tier resupply category correctly', () => {

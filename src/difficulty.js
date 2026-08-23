@@ -67,7 +67,7 @@ export function calculateSegmentDifficulty(trackPoints, startMi = 0, endMi = nul
   let totalDistanceMiles = 0;
   let gainMeters = 0;
   let lossMeters = 0;
-  let climbingDistanceMiles = 0;
+  let _climbingDistanceMiles = 0;
   let totalClimbGradeSum = 0;
   let climbSampleCount = 0;
   let maxGradePct = 0;
@@ -102,7 +102,7 @@ export function calculateSegmentDifficulty(trackPoints, startMi = 0, endMi = nul
     }
 
     if (gradePct > 1) {
-      climbingDistanceMiles += dMi;
+      _climbingDistanceMiles += dMi;
       totalClimbGradeSum += gradePct;
       climbSampleCount++;
     }

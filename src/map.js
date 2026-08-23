@@ -9,10 +9,10 @@
 
 import maplibregl from 'maplibre-gl';
 import {
+  distanceFromStart,
   getCoordinatesAtMile,
   getTrackSegmentForMiles,
   haversineDistance,
-  distanceFromStart,
   nearestTrackPointIndex,
 } from './gpx.js';
 
@@ -828,6 +828,6 @@ export function highlightMapSegment(map, trackPoints, startMi, endMi) {
 
   // Fit bounds to segment
   const bounds = new maplibregl.LngLatBounds();
-  coordinates.forEach((c) => bounds.extend(c));
+  for (const c of coordinates) bounds.extend(c);
   map.fitBounds(bounds, { padding: 40, maxZoom: 14 });
 }

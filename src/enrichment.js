@@ -7,7 +7,7 @@
  * @module enrichment
  */
 
-import { osmCampWater, osmCampFee } from './camp.js';
+import { osmCampFee, osmCampWater } from './camp.js';
 
 /**
  * 4-Tier Resupply Categories:
@@ -31,7 +31,7 @@ export const RESUPPLY_TIERS = {
  * @returns {'grocery' | 'cstore' | 'restaurant' | 'none'}
  */
 export function inferResupplyCategory(name = '', description = '', tags = {}) {
-  if (tags && tags.resupplyCategory) return tags.resupplyCategory;
+  if (tags?.resupplyCategory) return tags.resupplyCategory;
 
   if (tags && (tags.shop === 'supermarket' || tags.shop === 'grocery' || tags.shop === 'general')) {
     return 'grocery';
@@ -121,7 +121,7 @@ export function inferResupplyCategory(name = '', description = '', tags = {}) {
  * @param {number} [distanceFromStartMi]
  * @returns {'short' | 'medium' | 'long' | 'dispersed'}
  */
-export function inferCampTier(name = '', description = '', distanceFromStartMi = 0) {
+export function inferCampTier(name = '', description = '', _distanceFromStartMi = 0) {
   const text = `${name} ${description}`.toLowerCase();
   if (text.includes('short')) return 'short';
   if (text.includes('medium')) return 'medium';

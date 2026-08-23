@@ -29,7 +29,7 @@ export function openWaypointEditorModal({
 
   // If default coordinates are missing or at (0,0), interpolate from track points
   if (!lat && !lon && route?.trackPoints?.length) {
-    const pt = getCoordinatesAtMile(route.trackPoints, parseFloat(mile) || 0);
+    const pt = getCoordinatesAtMile(route.trackPoints, Number.parseFloat(mile) || 0);
     if (pt) {
       lat = pt[0];
       lon = pt[1];
@@ -138,21 +138,21 @@ export function openWaypointEditorModal({
   // Highlight type chip on selection & toggle camp fields
   const chips = modal.querySelectorAll('.type-chip');
   const campGroup = modal.querySelector('#camp-attributes-group');
-  chips.forEach((chip) => {
+  for (const chip of chips) {
     chip.addEventListener('change', () => {
-      chips.forEach((c) => c.classList.remove('type-chip--selected'));
+      for (const c of chips) c.classList.remove('type-chip--selected');
       chip.classList.add('type-chip--selected');
       const selectedVal = form.querySelector('input[name="wpt-type"]:checked')?.value;
       if (campGroup) {
         campGroup.style.display = selectedVal === 'camping' ? '' : 'none';
       }
     });
-  });
+  }
 
   // Close handlers
-  modal.querySelectorAll('[data-action="close"]').forEach((el) => {
+  for (const el of modal.querySelectorAll('[data-action="close"]')) {
     el.addEventListener('click', closeWaypointEditorModal);
-  });
+  }
 
   // Delete handler
   const deleteBtn = modal.querySelector('#wpt-delete-btn');
@@ -171,7 +171,7 @@ export function openWaypointEditorModal({
     e.preventDefault();
     const selectedType = form.querySelector('input[name="wpt-type"]:checked')?.value || 'water';
     const wptName = form.querySelector('#wpt-name').value.trim();
-    const wptMile = parseFloat(form.querySelector('#wpt-mile').value) || 0;
+    const wptMile = Number.parseFloat(form.querySelector('#wpt-mile').value) || 0;
     const wptReliability = form.querySelector('#wpt-reliability').value;
     const wptDesc = form.querySelector('#wpt-desc').value.trim();
     const wptCampWater = form.querySelector('#wpt-camp-water')?.value || null;
@@ -193,7 +193,7 @@ export function openWaypointEditorModal({
     }
 
     const result = {
-      id: waypoint?.id || 'user-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+      id: waypoint?.id || `user-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       name: wptName,
       type: selectedType,
       lat: finalLat,

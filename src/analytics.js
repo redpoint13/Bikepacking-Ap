@@ -7,8 +7,8 @@
  * @module analytics
  */
 
-import { calculateElevation } from './gpx.js';
 import { calculateSegmentDifficulty } from './difficulty.js';
+import { calculateElevation } from './gpx.js';
 import { buildPlan, getActiveStopIds } from './plan.js';
 
 /**

@@ -54,7 +54,7 @@ export function speak(text) {
  * @param {object} nextResource { type: 'water' | 'camp', distance: number }
  * @returns {string}
  */
-export function generateStatusReport(currentMile, targetMile, etaDate, nextResource = null) {
+export function generateStatusReport(currentMile, _targetMile, etaDate, nextResource = null) {
   const parts = [];
   parts.push(`You are at mile ${Math.round(currentMile)}.`);
 

@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { generatePrintableItineraryHTML, generateGPX } from '../export.js';
+import { generateGPX, generatePrintableItineraryHTML } from '../export.js';
 import { PLAN_DEFAULTS } from '../plan.js';
 
 const MOCK_ROUTE = {

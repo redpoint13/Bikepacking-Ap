@@ -1,8 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
-  calculateSegmentDifficulty,
-  calculateRouteDifficulty,
   SURFACE_FACTORS,
+  calculateRouteDifficulty,
+  calculateSegmentDifficulty,
 } from '../difficulty.js';
 
 describe('difficulty.js', () => {

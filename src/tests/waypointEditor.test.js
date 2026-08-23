@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { openWaypointEditorModal, closeWaypointEditorModal } from '../ui/waypointEditorModal.js';
+import { closeWaypointEditorModal, openWaypointEditorModal } from '../ui/waypointEditorModal.js';
 
 function makeSampleRoute() {
   return {

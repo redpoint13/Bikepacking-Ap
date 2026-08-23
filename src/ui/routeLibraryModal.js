@@ -8,9 +8,9 @@
  */
 
 import {
-  getAllRoutes,
-  getActiveRouteId,
   deleteRouteFromLibrary,
+  getActiveRouteId,
+  getAllRoutes,
   getRouteById,
 } from '../storage.js';
 
@@ -112,7 +112,7 @@ export async function openRouteLibraryModal({ onSelectRoute, onUploadGPX, onImpo
     container.innerHTML = filtered
       .map((r) => {
         const isActive = r.id === activeId;
-        const dist = r.totalDistanceMiles ? r.totalDistanceMiles.toFixed(1) + ' mi' : 'GPX Track';
+        const dist = r.totalDistanceMiles ? `${r.totalDistanceMiles.toFixed(1)} mi` : 'GPX Track';
         const waypointsCount = r.waypoints ? r.waypoints.length : 0;
         const dateStr = formatDate(r.savedAt);
 
@@ -121,9 +121,7 @@ export async function openRouteLibraryModal({ onSelectRoute, onUploadGPX, onImpo
           : '';
         const selectBtn = isActive
           ? '<button class="btn-card-action btn-card-action--active" disabled>Loaded</button>'
-          : '<button class="btn-card-action btn-card-action--select" data-action="select" data-route-id="' +
-            r.id +
-            '">Load Route</button>';
+          : `<button class="btn-card-action btn-card-action--select" data-action="select" data-route-id="${r.id}">Load Route</button>`;
 
         return `
           <div class="route-card ${isActive ? 'route-card--active' : ''}" data-route-id="${r.id}">
@@ -163,9 +161,9 @@ export async function openRouteLibraryModal({ onSelectRoute, onUploadGPX, onImpo
 
   searchInput.addEventListener('input', renderList);
 
-  modal.querySelectorAll('[data-action="close"]').forEach((el) => {
+  for (const el of modal.querySelectorAll('[data-action="close"]')) {
     el.addEventListener('click', closeRouteLibraryModal);
-  });
+  }
 
   container.addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-action]');
@@ -227,7 +225,7 @@ export async function openRouteLibraryModal({ onSelectRoute, onUploadGPX, onImpo
         closeRouteLibraryModal();
         await onImportURL(url);
       } catch (err) {
-        alert('Failed to import: ' + err.message);
+        alert(`Failed to import: ${err.message}`);
       } finally {
         urlSubmit.disabled = false;
         urlSubmit.textContent = 'Import URL';

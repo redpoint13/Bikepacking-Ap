@@ -4,10 +4,10 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  ESSENTIAL_GEAR_TEMPLATES,
   generateStartChecklist,
   generateStopChecklists,
   getChecklistSummaryMarkdown,
-  ESSENTIAL_GEAR_TEMPLATES,
 } from '../checklist.js';
 import { buildPlan } from '../plan.js';
 

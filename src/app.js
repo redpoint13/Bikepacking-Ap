@@ -5,6 +5,8 @@
  * CSS is imported only in main.js so this module stays test-friendly.
  */
 
+import { searchOSMResources } from './api.js';
+import { generateStatusReport, isVoiceEnabled, setVoiceEnabled, speak } from './audio.js';
 import { enrichCampSources } from './camp.js';
 import { GPSManager } from './gps.js';
 import {
@@ -25,23 +27,24 @@ import {
 import { importFromURL } from './import.js';
 import {
   destroyMap,
+  highlightMapSegment,
   initMap,
   updateMapDayPlan,
   updateMapWaypoints,
   updateMileMarkers,
   updateUserLocationMarker,
-  highlightMapSegment,
 } from './map.js';
-import { highlightProfileSegment } from './ui/elevationProfile.js';
 import {
   PLAN_DEFAULTS,
   buildPlan,
-  optimizeWaterStops,
   getActiveStopIds,
   getWaypointsWithSyntheticCamps,
+  optimizeWaterStops,
 } from './plan.js';
 import { renderOSMSearchResults, renderPlanningView, updatePlanningView } from './planning.js';
+import { RadarController } from './radar.js';
 import { enrichResupplySources } from './resupply.js';
+import { appState, getPlanDefaults, persistUserPreferences } from './state.js';
 import {
   clearEnrichment,
   clearPlanOptions,
@@ -53,23 +56,20 @@ import {
   savePlanOptions,
   saveRoute,
 } from './storage.js';
+import { getAllRoutes, getRouteById, saveRouteToLibrary, setActiveRouteId } from './storage.js';
 import { calculateDaylightBuffer } from './sun.js';
-import { enrichWaterSources } from './water.js';
-import { RadarController } from './radar.js';
-import { speak, setVoiceEnabled, isVoiceEnabled, generateStatusReport } from './audio.js';
 import { syncOfflineMap } from './sync.js';
-import { searchOSMResources } from './api.js';
-import { appState, getPlanDefaults, persistUserPreferences } from './state.js';
-import { updateResourceCards as updateResourceCardsUI } from './ui/radarCards.js';
+import { highlightProfileSegment } from './ui/elevationProfile.js';
 import { renderElevationProfile } from './ui/elevationProfile.js';
-import {
-  setSunsprintTargetMile,
-  getSunsprintTargetMile,
-  getCurrentEtaDate,
-} from './ui/sunsprint.js';
+import { updateResourceCards as updateResourceCardsUI } from './ui/radarCards.js';
 import { openRouteLibraryModal } from './ui/routeLibraryModal.js';
+import {
+  getCurrentEtaDate,
+  getSunsprintTargetMile,
+  setSunsprintTargetMile,
+} from './ui/sunsprint.js';
 import { openWaypointEditorModal } from './ui/waypointEditorModal.js';
-import { getAllRoutes, getRouteById, setActiveRouteId, saveRouteToLibrary } from './storage.js';
+import { enrichWaterSources } from './water.js';
 
 // ---------------------------------------------------------------------------
 // Module state
@@ -97,7 +97,7 @@ let lastCurrentMile = 0;
 let lastPaceMph = 15;
 
 /** @type {boolean} */
-let isGhostMode = false;
+let _isGhostMode = false;
 
 /** @type {WakeLockSentinel | null} */
 let wakeLock = null;
@@ -637,7 +637,7 @@ export function wireOfflineIndicator(container) {
 // ---------------------------------------------------------------------------
 
 function wireEvents(container) {
-  const fab = container.querySelector('#load-route-btn');
+  const _fab = container.querySelector('#load-route-btn');
   const fileInput = container.querySelector('#gpx-file-input');
   const importPlanBtn = container.querySelector('#import-plan-btn');
   const syncMapBtn = container.querySelector('#sync-map-btn');
@@ -963,7 +963,7 @@ function wireEvents(container) {
 
   if (ghostEnterBtn && ghostWakeBtn && ghostOverlay && mapSection) {
     ghostEnterBtn.addEventListener('click', async () => {
-      isGhostMode = true;
+      _isGhostMode = true;
       ghostOverlay.hidden = false;
       mapSection.hidden = true;
       try {
@@ -976,7 +976,7 @@ function wireEvents(container) {
     });
 
     ghostWakeBtn.addEventListener('click', async () => {
-      isGhostMode = false;
+      _isGhostMode = false;
       ghostOverlay.hidden = true;
       mapSection.hidden = false;
       if (currentMap) {

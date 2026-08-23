@@ -7,8 +7,8 @@
  * @module radar
  */
 
-import { distanceFromStart, waypointsOfType } from './gpx.js';
 import { speak } from './audio.js';
+import { distanceFromStart, waypointsOfType } from './gpx.js';
 
 export class RadarController {
   /**

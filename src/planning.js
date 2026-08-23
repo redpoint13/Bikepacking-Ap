@@ -15,12 +15,12 @@ import {
  * @module planning
  */
 
-import { PLAN_DEFAULTS, buildPlan, optimizeWaterStops, getActiveStopIds } from './plan.js';
-import { exportPlanBundle } from './storage.js';
-import { generateGPX, sharePlan, exportPDFItinerary } from './export.js';
+import { buildDaySegmentAnalytics, computeSegmentAnalytics } from './analytics.js';
 import { isVoiceEnabled, setVoiceEnabled, speak } from './audio.js';
 import { calculateRouteDifficulty } from './difficulty.js';
-import { buildDaySegmentAnalytics, computeSegmentAnalytics } from './analytics.js';
+import { exportPDFItinerary, generateGPX, sharePlan } from './export.js';
+import { PLAN_DEFAULTS, buildPlan, getActiveStopIds, optimizeWaterStops } from './plan.js';
+import { exportPlanBundle } from './storage.js';
 import { openSegmentDrawer } from './ui/segmentDrawer.js';
 
 // ---------------------------------------------------------------------------
@@ -341,7 +341,7 @@ function renderDayOption(kind, opt, isChosen, dayNum) {
     : '';
 
   const habPill =
-    opt.difficulty && opt.difficulty.hikeABike && opt.difficulty.hikeABike.distanceMi > 0
+    opt.difficulty?.hikeABike && opt.difficulty.hikeABike.distanceMi > 0
       ? `<span style="color: var(--md-sys-color-tertiary, #f4b400); font-weight: 700; font-size: 10px;">⚠️ HAB: ${opt.difficulty.hikeABike.distanceMi} mi (${opt.difficulty.hikeABike.pitchCount} pitches ≥15%)</span>`
       : '';
 
@@ -557,7 +557,7 @@ function renderSegmentAnalyticsSection(route, options) {
         : '';
 
       const habBadge =
-        a.difficulty && a.difficulty.hikeABike && a.difficulty.hikeABike.distanceMi > 0
+        a.difficulty?.hikeABike && a.difficulty.hikeABike.distanceMi > 0
           ? `<span style="color: var(--md-sys-color-tertiary, #f4b400); font-weight: 700; font-size: 11px;">⚠️ ${a.difficulty.hikeABike.distanceMi} mi HAB (${a.difficulty.hikeABike.pitchCount} pitches)</span>`
           : `<span style="color: var(--md-sys-color-primary, #78dc95); font-size: 11px;">🟢 Minimal HAB</span>`;
 
@@ -568,7 +568,7 @@ function renderSegmentAnalyticsSection(route, options) {
             ? `<span class="difficulty-chip difficulty-chip--${la.difficulty.difficultyRating.cls}" style="font-size: 10px; padding: 1px 5px; border-radius: 4px; font-weight: 700;">${la.difficulty.difficultyRating.badge}</span>`
             : '';
           const legHab =
-            la.difficulty && la.difficulty.hikeABike && la.difficulty.hikeABike.distanceMi > 0
+            la.difficulty?.hikeABike && la.difficulty.hikeABike.distanceMi > 0
               ? `<span style="color: var(--md-sys-color-tertiary, #f4b400); font-weight: 600; font-size: 10px;">⚠️ ${la.difficulty.hikeABike.distanceMi}mi HAB</span>`
               : '';
 
@@ -1022,11 +1022,11 @@ export function renderPlanningView(root, route, options = null) {
         const bundle = await exportPlanBundle();
         if (!bundle) return;
         const gpxString = generateGPX(bundle.gpxText, planRoute, bundle.options);
-        const newFilename = bundle.filename.replace(/\.gpx$/i, '') + '-BPNav.gpx';
+        const newFilename = `${bundle.filename.replace(/\.gpx$/i, '')}-BPNav.gpx`;
         await sharePlan(newFilename, gpxString);
       } catch (err) {
         console.error('Export failed:', err);
-        alert('Could not export plan: ' + err.message);
+        alert(`Could not export plan: ${err.message}`);
       }
     });
   }
@@ -1204,9 +1204,9 @@ export function renderChecklists(route, plan) {
   const startChecklist = generateStartChecklist(route, plan);
   const stopChecklists = generateStopChecklists(route, plan);
 
-  let totalItems = 0;
-  for (const cat of startChecklist) totalItems += cat.items.length;
-  for (const stop of stopChecklists) totalItems += stop.items.length;
+  let _totalItems = 0;
+  for (const cat of startChecklist) _totalItems += cat.items.length;
+  for (const stop of stopChecklists) _totalItems += stop.items.length;
 
   const startCardsHtml = startChecklist
     .map((cat) => {
@@ -1358,15 +1358,15 @@ function wireChecklistInteractions(root, route, plan) {
   const resetBtn = root.querySelector('#btn-reset-checklists');
   if (resetBtn) {
     resetBtn.addEventListener('click', () => {
-      root.querySelectorAll('.checklist-checkbox').forEach((cb) => {
+      for (const cb of root.querySelectorAll('.checklist-checkbox')) {
         cb.checked = false;
         const label = cb.closest('.checklist-item')?.querySelector('.checklist-label');
         if (label) label.style.textDecoration = 'none';
-      });
+      }
     });
   }
 
-  root.querySelectorAll('.checklist-checkbox').forEach((cb) => {
+  for (const cb of root.querySelectorAll('.checklist-checkbox')) {
     cb.addEventListener('change', () => {
       const label = cb.closest('.checklist-item')?.querySelector('.checklist-label');
       if (label) {
@@ -1374,5 +1374,5 @@ function wireChecklistInteractions(root, route, plan) {
         label.style.opacity = cb.checked ? '0.6' : '1';
       }
     });
-  });
+  }
 }

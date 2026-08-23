@@ -1,6 +1,6 @@
-import { getActiveStopIds, getWaypointsWithSyntheticCamps, buildPlan } from './plan.js';
-import { getCoordinatesAtMile } from './gpx.js';
 import { generateStartChecklist, generateStopChecklists } from './checklist.js';
+import { getCoordinatesAtMile } from './gpx.js';
+import { buildPlan, getActiveStopIds, getWaypointsWithSyntheticCamps } from './plan.js';
 
 /**
  * Generates a new GPX string containing the original track plus all active waypoints.
@@ -20,7 +20,7 @@ export function generateGPX(originalGpxText, route, planOptions) {
 
   // Remove existing <wpt> elements so we don't duplicate them
   const existingWpts = doc.querySelectorAll('wpt');
-  existingWpts.forEach((node) => node.remove());
+  for (const node of existingWpts) node.remove();
 
   // Get actual waypoints (excluding synthetic/imaginary placeholders)
   const allWaypoints = (route.waypoints || []).filter(
@@ -33,7 +33,7 @@ export function generateGPX(originalGpxText, route, planOptions) {
   );
 
   // Append new <wpt> elements
-  activeWaypoints.forEach((wp) => {
+  for (const wp of activeWaypoints) {
     const wptNode = doc.createElement('wpt');
     wptNode.setAttribute('lat', wp.lat.toString());
     wptNode.setAttribute('lon', wp.lon.toString());
@@ -86,7 +86,7 @@ export function generateGPX(originalGpxText, route, planOptions) {
         gpxNode.appendChild(trkNode);
       }
     }
-  });
+  }
 
   const serializer = new XMLSerializer();
   return serializer.serializeToString(doc);
@@ -100,7 +100,7 @@ export function generateGPX(originalGpxText, route, planOptions) {
 export async function sharePlan(filename, gpxString) {
   const file = new File([gpxString], filename, { type: 'application/gpx+xml' });
 
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+  if (navigator.canShare?.({ files: [file] })) {
     try {
       await navigator.share({
         title: 'Bikepacking Route Plan',
@@ -145,7 +145,7 @@ function downloadFile(filename, content) {
 export function generatePrintableItineraryHTML(route, planOptions) {
   const plan = buildPlan(route, planOptions);
   const dayPlan = plan.dayPlan || [];
-  const waterCarry = plan.waterCarry || [];
+  const _waterCarry = plan.waterCarry || [];
   const foodCarry = plan.foodCarry || [];
 
   const startChecklist = generateStartChecklist(route, plan);
