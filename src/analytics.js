@@ -266,7 +266,9 @@ export function generateSegmentNarrative(segmentData) {
     } else if (wp.type === 'summit') {
       icon = '⛰️';
       category = 'Summit / Pass';
-      detail = wp.elevationFt ? `${wp.elevationFt.toLocaleString()} ft elevation` : (wp.description || '');
+      detail = wp.elevationFt
+        ? `${wp.elevationFt.toLocaleString()} ft elevation`
+        : wp.description || '';
     }
 
     milestones.push({
@@ -343,7 +345,7 @@ export function generateSegmentNarrative(segmentData) {
       icon: '📉',
       severity: 'tip',
       title: `Long Technical Descent (-${lossFt.toLocaleString()} ft)`,
-      text: `Extended descent. Watch for loose gravel, ruts, and brake overheating on steep sections.`,
+      text: 'Extended descent. Watch for loose gravel, ruts, and brake overheating on steep sections.',
     });
   }
 
