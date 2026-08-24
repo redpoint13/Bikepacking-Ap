@@ -506,7 +506,7 @@ export function updateUserLocationMarker(map, lat, lon) {
   } else {
     marker.setLngLat([lon, lat]);
   }
-  map.panTo([lon, lat]);
+  map.easeTo({ center: [lon, lat], duration: 400, essential: false });
 }
 
 const mileMarkers = new WeakMap();

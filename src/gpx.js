@@ -156,11 +156,35 @@ export function getOrCreateCumulativeDistances(trackPoints) {
  * @param {Array<[number, number]>} trackPoints
  * @returns {number} Index into trackPoints
  */
-export function nearestTrackPointIndex(lat, lon, trackPoints) {
+export function nearestTrackPointIndex(lat, lon, trackPoints, hintIndex = -1) {
   if (!trackPoints || trackPoints.length === 0) return 0;
+  const cosLat = Math.cos((lat * Math.PI) / 180);
+
+  // Fast localized search if a valid hintIndex is provided
+  if (hintIndex >= 0 && hintIndex < trackPoints.length) {
+    const windowStart = Math.max(0, hintIndex - 50);
+    const windowEnd = Math.min(trackPoints.length, hintIndex + 150);
+    let localIdx = hintIndex;
+    let localDistSq = Number.POSITIVE_INFINITY;
+
+    for (let i = windowStart; i < windowEnd; i++) {
+      const pt = trackPoints[i];
+      const dLat = pt[0] - lat;
+      const dLon = (pt[1] - lon) * cosLat;
+      const distSq = dLat * dLat + dLon * dLon;
+      if (distSq < localDistSq) {
+        localDistSq = distSq;
+        localIdx = i;
+      }
+    }
+    // If local minimum is reasonably close (~150 meters / 0.0015 deg), return it immediately
+    if (localDistSq < 0.000005) {
+      return localIdx;
+    }
+  }
+
   let nearestIdx = 0;
   let nearestDistSq = Number.POSITIVE_INFINITY;
-  const cosLat = Math.cos((lat * Math.PI) / 180);
 
   for (let i = 0; i < trackPoints.length; i++) {
     const pt = trackPoints[i];
@@ -183,9 +207,9 @@ export function nearestTrackPointIndex(lat, lon, trackPoints) {
  * @param {Array<[number, number]>} trackPoints
  * @returns {number} Distance in miles from route start
  */
-export function distanceFromStart(lat, lon, trackPoints) {
+export function distanceFromStart(lat, lon, trackPoints, hintIndex = -1) {
   if (!trackPoints || trackPoints.length === 0) return 0;
-  const idx = nearestTrackPointIndex(lat, lon, trackPoints);
+  const idx = nearestTrackPointIndex(lat, lon, trackPoints, hintIndex);
   const distances = getOrCreateCumulativeDistances(trackPoints);
   return distances[idx] ?? 0;
 }
