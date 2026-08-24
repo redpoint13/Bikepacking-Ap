@@ -1137,6 +1137,8 @@ svg {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--md-sys-color-on-surface-variant);
+  cursor: pointer;
+  user-select: none;
 }
 
 .plan-field__inputwrap {
@@ -1147,6 +1149,7 @@ svg {
   border-radius: var(--md-sys-shape-corner-small);
   padding: 0 var(--spacing-sm);
   height: 40px;
+  cursor: text;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
@@ -1185,6 +1188,8 @@ svg {
   font-weight: 600;
   margin-left: 2px;
   white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
 }
 
 .plan-checkbox {

@@ -1128,6 +1128,8 @@ export function renderPlanningView(root, route, options = null) {
  * @param {import('./gpx.js').RouteContext} route
  * @param {typeof PLAN_DEFAULTS} [options=null]
  */
+let repaintRaf = null;
+
 export function updatePlanningView(root, route, options = null) {
   if (!root) return;
   if (options) planOptions = options;
@@ -1136,7 +1138,14 @@ export function updatePlanningView(root, route, options = null) {
   if (!root.querySelector('#plan-summary')) {
     renderPlanningView(root, route, options);
   } else {
-    repaint(root);
+    if (typeof requestAnimationFrame !== 'undefined') {
+      if (repaintRaf) cancelAnimationFrame(repaintRaf);
+      repaintRaf = requestAnimationFrame(() => {
+        repaint(root);
+      });
+    } else {
+      repaint(root);
+    }
   }
 }
 
