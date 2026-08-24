@@ -12,9 +12,9 @@ import {
   createMarkerElement,
   destroyMap,
   initMap,
-  updateMileMarkers,
   updateMapDayPlan,
   updateMapWaypoints,
+  updateMileMarkers,
 } from '../map.js';
 
 // ---------------------------------------------------------------------------
@@ -379,6 +379,32 @@ describe('updateMapDayPlan', () => {
     expect(() => {
       updateMapDayPlan(null, MINIMAL_ROUTE.trackPoints, []);
     }).not.toThrow();
+  });
+
+  it('adds a source and layers per day segment', () => {
+    updateMapDayPlan(map, MINIMAL_ROUTE.trackPoints, [
+      { day: 1, startMi: 0, chosen: { endMi: 15, isFinish: false } },
+      { day: 2, startMi: 15, chosen: { endMi: 30, isFinish: true } },
+    ]);
+
+    expect(map.getSource('route-day-1')).toBeTruthy();
+    expect(map.getSource('route-day-2')).toBeTruthy();
+    expect(map.getLayer('route-line-day-1')).toBeTruthy();
+  });
+
+  it('clears stale day layers and sources on re-render', () => {
+    updateMapDayPlan(map, MINIMAL_ROUTE.trackPoints, [
+      { day: 1, startMi: 0, chosen: { endMi: 15, isFinish: false } },
+      { day: 2, startMi: 15, chosen: { endMi: 30, isFinish: true } },
+    ]);
+    // Re-render with a single day — day 2's source and layer must be gone.
+    updateMapDayPlan(map, MINIMAL_ROUTE.trackPoints, [
+      { day: 1, startMi: 0, chosen: { endMi: 15, isFinish: true } },
+    ]);
+
+    expect(map.getSource('route-day-1')).toBeTruthy();
+    expect(map.getSource('route-day-2')).toBeFalsy();
+    expect(map.getLayer('route-line-day-2')).toBeFalsy();
   });
 });
 

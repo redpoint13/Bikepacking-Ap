@@ -21,7 +21,7 @@ import {
   nextWaypointOfType,
   osmElementLabel,
   osmElementReliability,
-  parseGPX,
+  parseGPXAsync,
   waypointsOfType,
 } from './gpx.js';
 import { importFromURL } from './import.js';
@@ -637,6 +637,20 @@ export function wireOfflineIndicator(container) {
 // ---------------------------------------------------------------------------
 
 function wireEvents(container) {
+  // Segment highlight requests from Segment Analytics cards/drawer.
+  // Registered once here — previously this lived in showMapSection, which runs
+  // on every route load, so listeners accumulated without bound.
+  window.addEventListener('bpnav-highlight-segment', (e) => {
+    const { startMi, endMi } = e.detail || {};
+    if (currentRoute && currentMap && Number.isFinite(startMi) && Number.isFinite(endMi)) {
+      highlightMapSegment(currentMap, currentRoute.trackPoints, startMi, endMi);
+      const profileContainer = container.querySelector('#elevation-profile-container');
+      if (profileContainer) {
+        highlightProfileSegment(profileContainer, currentRoute, startMi, endMi);
+      }
+    }
+  });
+
   const _fab = container.querySelector('#load-route-btn');
   const fileInput = container.querySelector('#gpx-file-input');
   const importPlanBtn = container.querySelector('#import-plan-btn');
@@ -681,7 +695,7 @@ function wireEvents(container) {
         } else {
           planOptions = getPlanDefaults();
         }
-        const route = parseGPX(record.gpxText);
+        const route = await parseGPXAsync(record.gpxText);
         if (record.waypoints?.length) {
           route.waypoints = sanitizeWaypoints(record.waypoints);
         }
@@ -697,7 +711,7 @@ function wireEvents(container) {
           if (file.name.endsWith('.json')) {
             const bundle = JSON.parse(text);
             if (bundle.version && bundle.gpxText) {
-              const route = parseGPX(bundle.gpxText);
+              const route = await parseGPXAsync(bundle.gpxText);
               if (bundle.waypoints) route.waypoints = sanitizeWaypoints(bundle.waypoints);
               const routeId = await saveRouteToLibrary({
                 name:
@@ -720,7 +734,7 @@ function wireEvents(container) {
               return;
             }
           }
-          const route = parseGPX(text);
+          const route = await parseGPXAsync(text);
           const routeId = await saveRouteToLibrary({
             name: file.name.replace(/\.gpx$/i, ''),
             filename: file.name,
@@ -809,7 +823,7 @@ function wireEvents(container) {
           }
 
           // Restore route and enrichment
-          const route = parseGPX(bundle.gpxText);
+          const route = await parseGPXAsync(bundle.gpxText);
           if (bundle.waypoints) {
             route.waypoints = sanitizeWaypoints(bundle.waypoints);
             await saveEnrichment(route.waypoints).catch(() => {});
@@ -824,7 +838,7 @@ function wireEvents(container) {
       // Standard GPX file flow
       planOptions = getPlanDefaults();
       clearPlanOptions().catch(() => {});
-      const route = parseGPX(text);
+      const route = await parseGPXAsync(text);
       applyRoute(container, route);
       saveRoute(text, file.name).catch((err) =>
         console.warn('[BPNav] Could not save route:', err.message),
@@ -862,7 +876,7 @@ function wireEvents(container) {
       const res = await fetch('./Coconino_Loop.gpx');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const text = await res.text();
-      const route = parseGPX(text);
+      const route = await parseGPXAsync(text);
       applyRoute(container, route);
       saveRoute(text, 'Coconino_Loop.gpx').catch((err) =>
         console.warn('[BPNav] Could not save route:', err.message),
@@ -1675,18 +1689,6 @@ function showMapSection(container, route) {
   // Initialise MapLibre — must happen after the section is visible
   currentMap = initMap('map', route, [], []);
 
-  // Listen for segment highlight requests from Segment Analytics cards/drawer
-  window.addEventListener('bpnav-highlight-segment', (e) => {
-    const { startMi, endMi } = e.detail || {};
-    if (currentRoute && currentMap && Number.isFinite(startMi) && Number.isFinite(endMi)) {
-      highlightMapSegment(currentMap, currentRoute.trackPoints, startMi, endMi);
-      const profileContainer = container.querySelector('#elevation-profile-container');
-      if (profileContainer) {
-        highlightProfileSegment(profileContainer, currentRoute, startMi, endMi);
-      }
-    }
-  });
-
   // Draw initial mile markers if checked
   const toggleMilesCheckbox = container.querySelector('#map-toggle-miles');
   const showMiles = toggleMilesCheckbox ? toggleMilesCheckbox.checked : true;
@@ -1742,7 +1744,7 @@ async function tryRestoreRoute(container) {
         const res = await fetch('./Coconino_Loop.gpx');
         if (res.ok) {
           const text = await res.text();
-          const route = parseGPX(text);
+          const route = await parseGPXAsync(text);
           const routeId = await saveRouteToLibrary({
             id: 'coconino-loop-demo',
             name: 'Coconino Loop',
@@ -1772,7 +1774,7 @@ async function tryRestoreRoute(container) {
       planOptions = getPlanDefaults();
     }
 
-    const route = parseGPX(stored.gpxText);
+    const route = await parseGPXAsync(stored.gpxText);
     applyRoute(container, route);
 
     // Apply cached enrichment immediately so markers render without waiting

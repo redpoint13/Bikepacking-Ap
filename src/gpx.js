@@ -233,6 +233,21 @@ function defaultReliability(type, name) {
 // GPX XML parsing
 // ---------------------------------------------------------------------------
 
+/** Track/way points processed between event-loop yields during async parsing. */
+const PARSE_CHUNK_SIZE = 2000;
+
+/**
+ * Yields control to the event loop, letting the browser paint and handle input.
+ * Prefers the scheduler API where available; falls back to a macrotask.
+ * @returns {Promise<void>}
+ */
+function yieldToEventLoop() {
+  if (typeof scheduler !== 'undefined' && typeof scheduler.yield === 'function') {
+    return scheduler.yield();
+  }
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 /**
  * Extracts a text value from an XML element by tag name.
  * @param {Element} el
@@ -244,9 +259,13 @@ function getText(el, tag) {
 }
 
 /**
- * Parses a GPX XML string into a structured RouteContext.
+ * Shared parsing core, written as a generator so a single implementation can be
+ * driven either synchronously ({@link parseGPX}) or with yields to the event
+ * loop ({@link parseGPXAsync}). Yields a 0–1 progress fraction at each chunk
+ * boundary and returns the finished RouteContext.
  *
  * @param {string} xmlString - Raw GPX file content
+ * @yields {number} Progress fraction
  * @returns {RouteContext}
  *
  * @typedef {Object} Waypoint
@@ -270,7 +289,11 @@ function getText(el, tag) {
  * @property {boolean} isLoop        - True when start and end are within 1 mile of each other
  * @property {Object} metadata       - Route-specific metadata (forced stops, etc.)
  */
-export function parseGPX(xmlString) {
+function* _parseGPXSteps(xmlString) {
+  // Yield before the (atomic, unchunkable) XML parse so callers that render a
+  // loading state get a paint before the main thread is occupied.
+  yield 0;
+
   const parser = new DOMParser();
   const doc = parser.parseFromString(xmlString, 'application/xml');
 
@@ -284,7 +307,10 @@ export function parseGPX(xmlString) {
     getText(doc, 'name') || doc.querySelector('trk > name')?.textContent?.trim() || 'Unnamed Route';
 
   // --- Track points ---
-  const trkptEls = doc.getElementsByTagName('trkpt');
+  // querySelectorAll returns a STATIC NodeList. getElementsByTagName returns a
+  // *live* HTMLCollection whose every index access re-walks the document,
+  // making iteration O(n^2) — ~14s for a 15k-point route.
+  const trkptEls = doc.querySelectorAll('trkpt');
   if (trkptEls.length === 0) {
     throw new Error('No track points found in GPX file. Is this a valid route file?');
   }
@@ -295,7 +321,12 @@ export function parseGPX(xmlString) {
   let minLon = Number.POSITIVE_INFINITY;
   let maxLon = Number.NEGATIVE_INFINITY;
 
-  for (const pt of trkptEls) {
+  for (let i = 0; i < trkptEls.length; i++) {
+    // Hand control back to the event loop every chunk so a long route never
+    // blocks paint or input for more than a few milliseconds at a time.
+    if (i > 0 && i % PARSE_CHUNK_SIZE === 0) yield i / trkptEls.length;
+
+    const pt = trkptEls[i];
     const lat = Number.parseFloat(pt.getAttribute('lat'));
     const lon = Number.parseFloat(pt.getAttribute('lon'));
     if (Number.isNaN(lat) || Number.isNaN(lon)) continue;
@@ -316,10 +347,12 @@ export function parseGPX(xmlString) {
     trackPoints._totalDistance || cumDistances[cumDistances.length - 1] || 0;
 
   // --- Waypoints ---
-  const wptEls = doc.getElementsByTagName('wpt');
+  const wptEls = doc.querySelectorAll('wpt');
   const waypoints = [];
 
   for (let i = 0; i < wptEls.length; i++) {
+    if (i > 0 && i % PARSE_CHUNK_SIZE === 0) yield i / wptEls.length;
+
     const wpt = wptEls[i];
     const lat = Number.parseFloat(wpt.getAttribute('lat'));
     const lon = Number.parseFloat(wpt.getAttribute('lon'));
@@ -378,6 +411,44 @@ export function parseGPX(xmlString) {
 
   routeCtx.difficulty = calculateRouteDifficulty(routeCtx);
   return routeCtx;
+}
+
+/**
+ * Parses a GPX XML string into a structured RouteContext, synchronously.
+ *
+ * Blocks the main thread for the whole parse. Prefer {@link parseGPXAsync} in
+ * UI code; this remains for tests and non-UI callers.
+ *
+ * @param {string} xmlString - Raw GPX file content
+ * @returns {RouteContext}
+ */
+export function parseGPX(xmlString) {
+  const steps = _parseGPXSteps(xmlString);
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value;
+}
+
+/**
+ * Parses a GPX XML string into a structured RouteContext without blocking the
+ * main thread, yielding to the event loop between chunks.
+ *
+ * Produces a result identical to {@link parseGPX} — both drive the same
+ * generator; only the scheduling differs.
+ *
+ * @param {string} xmlString - Raw GPX file content
+ * @param {{ onProgress?: (fraction: number) => void }} [options]
+ * @returns {Promise<RouteContext>}
+ */
+export async function parseGPXAsync(xmlString, { onProgress } = {}) {
+  const steps = _parseGPXSteps(xmlString);
+  let step = steps.next();
+  while (!step.done) {
+    if (onProgress && typeof step.value === 'number') onProgress(step.value);
+    await yieldToEventLoop();
+    step = steps.next();
+  }
+  return step.value;
 }
 
 // ---------------------------------------------------------------------------

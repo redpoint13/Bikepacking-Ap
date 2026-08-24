@@ -2803,3 +2803,57 @@ svg {
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Global crash panel (see errorBoundary.js)
+   --------------------------------------------------------------------------- */
+
+.bpnav-crash-panel {
+  position: fixed;
+  left: 50%;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 10000;
+  width: min(420px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--md-sys-color-outline-variant, #45483f);
+  background: var(--md-sys-color-surface-container-high, #2a312d);
+  color: var(--md-sys-color-on-surface, #e1e3df);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  font-size: 13px;
+}
+
+.bpnav-crash-detail {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--md-sys-color-on-surface-variant, #c1c9bf);
+  overflow-wrap: anywhere;
+}
+
+.bpnav-crash-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.bpnav-crash-actions button {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 100px;
+  border: 1px solid var(--md-sys-color-outline-variant, #45483f);
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.bpnav-crash-actions button:first-child {
+  background: var(--md-sys-color-primary, #006c4c);
+  color: var(--md-sys-color-on-primary, #ffffff);
+  border-color: transparent;
+}
