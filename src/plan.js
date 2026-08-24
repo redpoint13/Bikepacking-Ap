@@ -948,7 +948,11 @@ export function buildDayPlan(route, opts = {}) {
       options: { short, medium, long },
       chosen,
     });
-    startMi = chosen.endMi;
+    if (chosen && chosen.endMi > startMi) {
+      startMi = chosen.endMi;
+    } else {
+      startMi = Math.min(total, startMi + Math.max(1, o.targetDailyMiles || 10));
+    }
     dayNum += 1;
   }
 

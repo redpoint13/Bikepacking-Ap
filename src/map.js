@@ -537,6 +537,7 @@ export function updateMileMarkers(map, trackPoints, show) {
     const p1 = trackPoints[i - 1];
     const p2 = trackPoints[i];
     const d = haversineDistance(p1[0], p1[1], p2[0], p2[1]);
+    if (!Number.isFinite(d) || d <= 0) continue;
 
     while (cumulative + d >= nextTarget) {
       // Interpolate point
@@ -633,48 +634,60 @@ export function updateMapDayPlan(map, trackPoints, dayPlan) {
       const glowLayerId = `route-glow-day-${d.day}`;
       const color = colors[index % colors.length];
 
-      map.addSource(sourceId, {
-        type: 'geojson',
-        data: {
+      if (map.getSource(sourceId)) {
+        map.getSource(sourceId).setData({
           type: 'Feature',
           geometry: { type: 'LineString', coordinates },
           properties: {},
-        },
-      });
+        });
+      } else {
+        map.addSource(sourceId, {
+          type: 'geojson',
+          data: {
+            type: 'Feature',
+            geometry: { type: 'LineString', coordinates },
+            properties: {},
+          },
+        });
+      }
 
       const beforeGlow = map.getLayer('route-glow') ? 'route-glow' : undefined;
       const beforeLine = map.getLayer('route-line') ? 'route-line' : undefined;
 
-      map.addLayer(
-        {
-          id: glowLayerId,
-          type: 'line',
-          source: sourceId,
-          layout: { 'line-join': 'round', 'line-cap': 'round' },
-          paint: {
-            'line-color': color,
-            'line-width': 8,
-            'line-opacity': 0.25,
-            'line-blur': 4,
+      if (!map.getLayer(glowLayerId)) {
+        map.addLayer(
+          {
+            id: glowLayerId,
+            type: 'line',
+            source: sourceId,
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: {
+              'line-color': color,
+              'line-width': 8,
+              'line-opacity': 0.25,
+              'line-blur': 4,
+            },
           },
-        },
-        beforeGlow,
-      );
+          beforeGlow,
+        );
+      }
 
-      map.addLayer(
-        {
-          id: lineLayerId,
-          type: 'line',
-          source: sourceId,
-          layout: { 'line-join': 'round', 'line-cap': 'round' },
-          paint: {
-            'line-color': color,
-            'line-width': 4.5,
-            'line-opacity': 0.9,
+      if (!map.getLayer(lineLayerId)) {
+        map.addLayer(
+          {
+            id: lineLayerId,
+            type: 'line',
+            source: sourceId,
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: {
+              'line-color': color,
+              'line-width': 4.5,
+              'line-opacity': 0.9,
+            },
           },
-        },
-        beforeLine,
-      );
+          beforeLine,
+        );
+      }
     });
   }
 
@@ -729,7 +742,7 @@ export function updateMapDayPlan(map, trackPoints, dayPlan) {
     if (!chosen) return;
 
     const pt = getCoordinatesAtMile(trackPoints, chosen.endMi);
-    if (!pt) return;
+    if (!pt || !Number.isFinite(pt[0]) || !Number.isFinite(pt[1])) return;
 
     const el = document.createElement('div');
     el.className = 'day-label-pill';

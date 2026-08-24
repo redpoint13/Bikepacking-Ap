@@ -810,13 +810,14 @@ export function computeElevationProfileSamples(route, numSamples = 200) {
 
   const step = totalDist / Math.max(10, numSamples);
   const samples = [];
+  let currentIdx = 0;
 
-  for (let d = 0; d <= totalDist; d += step) {
+  for (let d = 0; d <= totalDist && samples.length <= numSamples * 2; d += step) {
     const targetMi = Math.min(totalDist, d);
-    let idx = 0;
-    while (idx < cumDist.length - 1 && cumDist[idx + 1] < targetMi) {
-      idx++;
+    while (currentIdx < cumDist.length - 1 && cumDist[currentIdx + 1] < targetMi) {
+      currentIdx++;
     }
+    const idx = currentIdx;
 
     const [lat, lon, eleMeters] = points[idx];
     const eleFt = (eleMeters ?? 0) * 3.28084;
