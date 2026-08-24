@@ -11,6 +11,7 @@
  * @module water
  */
 
+import { describeError } from './errorBoundary.js';
 import { distanceFromStart, fetchOverpass, haversineDistance } from './gpx.js';
 
 // ---------------------------------------------------------------------------
@@ -133,7 +134,7 @@ export async function fetchUSGSLocations(bounds) {
     const data = await res.json();
     return data.features ?? [];
   } catch (err) {
-    console.warn('[BPNav] USGS fetch failed:', err.message);
+    console.warn('[BPNav] USGS fetch failed:', describeError(err));
     return [];
   }
 }
@@ -165,7 +166,7 @@ export async function fetchOSMWater(bounds) {
     const data = await fetchOverpass(query);
     return data.elements ?? [];
   } catch (err) {
-    console.warn('[BPNav] OSM fetch failed:', err.message);
+    console.warn('[BPNav] OSM fetch failed:', describeError(err));
     return [];
   }
 }
@@ -219,7 +220,7 @@ export async function fetchUSGSPercentileStats(siteIds) {
       }
     }
   } catch (err) {
-    console.warn('[BPNav] USGS statistics fetch failed:', err.message);
+    console.warn('[BPNav] USGS statistics fetch failed:', describeError(err));
   }
 
   return statsMap;
@@ -347,7 +348,7 @@ export async function fetchUSGSFlowData(siteIds) {
       }
     }
   } catch (err) {
-    console.warn('[BPNav] USGS NWIS streamflow fetch failed:', err.message);
+    console.warn('[BPNav] USGS NWIS streamflow fetch failed:', describeError(err));
   }
 
   return flowMap;

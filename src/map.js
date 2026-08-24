@@ -788,6 +788,12 @@ export function updateMapDayPlan(map, trackPoints, dayPlan) {
  */
 export function highlightMapSegment(map, trackPoints, startMi, endMi) {
   if (!map || !trackPoints) return;
+  // addSource/addLayer throw "Style is not done loading" if the rider clicks a
+  // segment before the style settles. Defer, matching updateMapDayPlan.
+  if (!map.isStyleLoaded()) {
+    map.once('style.load', () => highlightMapSegment(map, trackPoints, startMi, endMi));
+    return;
+  }
   const segmentPoints = getTrackSegmentForMiles(trackPoints, startMi, endMi);
   if (segmentPoints.length < 2) return;
 

@@ -8,6 +8,7 @@
 import { searchOSMResources } from './api.js';
 import { generateStatusReport, isVoiceEnabled, setVoiceEnabled, speak } from './audio.js';
 import { enrichCampSources } from './camp.js';
+import { describeError } from './errorBoundary.js';
 import { GPSManager } from './gps.js';
 import {
   applyStartOffset,
@@ -69,6 +70,7 @@ import {
   setSunsprintTargetMile,
 } from './ui/sunsprint.js';
 import { openWaypointEditorModal } from './ui/waypointEditorModal.js';
+import { on, setHTML, setProps, setStyle, setText } from './utils/dom.js';
 import { enrichWaterSources } from './water.js';
 
 // ---------------------------------------------------------------------------
@@ -139,6 +141,17 @@ function _executeSyncMapState() {
 
   const plan = buildPlan(currentRoute, planOptions);
   updateMapDayPlan(currentMap, currentRoute.trackPoints, plan.dayPlan);
+}
+
+/**
+ * Re-flows the map after a visibility change. The null check must happen inside
+ * the frame callback: showMapSection sets currentMap to null while tearing the
+ * old map down, which can land between the scheduling call and the frame.
+ */
+function scheduleMapResize() {
+  requestAnimationFrame(() => {
+    if (currentMap) currentMap.resize();
+  });
 }
 
 /** @type {'planning' | 'riding'} Active app mode. */
@@ -748,7 +761,7 @@ function wireEvents(container) {
           kickoffCampEnrichment(container, route);
           kickoffResupplyEnrichment(container, route);
         } catch (err) {
-          showError(container, err.message);
+          showError(container, err);
         } finally {
           setLoadingState(container, false);
         }
@@ -771,7 +784,7 @@ function wireEvents(container) {
           kickoffCampEnrichment(container, route);
           kickoffResupplyEnrichment(container, route);
         } catch (err) {
-          showError(container, err.message);
+          showError(container, err);
           throw err;
         } finally {
           setLoadingState(container, false);
@@ -841,14 +854,14 @@ function wireEvents(container) {
       const route = await parseGPXAsync(text);
       applyRoute(container, route);
       saveRoute(text, file.name).catch((err) =>
-        console.warn('[BPNav] Could not save route:', err.message),
+        console.warn('[BPNav] Could not save route:', describeError(err)),
       );
       kickoffWaterEnrichment(container, route);
       kickoffCampEnrichment(container, route);
       kickoffResupplyEnrichment(container, route);
     } catch (err) {
       console.error('[BPNav] Import failed:', err);
-      showError(container, err.message);
+      showError(container, err);
     } finally {
       setLoadingState(container, false);
       // Reset file input so the same file can be re-loaded
@@ -879,14 +892,14 @@ function wireEvents(container) {
       const route = await parseGPXAsync(text);
       applyRoute(container, route);
       saveRoute(text, 'Coconino_Loop.gpx').catch((err) =>
-        console.warn('[BPNav] Could not save route:', err.message),
+        console.warn('[BPNav] Could not save route:', describeError(err)),
       );
       kickoffWaterEnrichment(container, route);
       kickoffCampEnrichment(container, route);
       kickoffResupplyEnrichment(container, route);
     } catch (err) {
       console.error('[BPNav] Demo load failed:', err);
-      showError(container, `Demo load failed: ${err.message}`);
+      showError(container, `Demo load failed: ${describeError(err)}`);
     } finally {
       setLoadingState(container, false);
     }
@@ -923,7 +936,7 @@ function wireEvents(container) {
       kickoffResupplyEnrichment(container, route);
     } catch (err) {
       console.error('[BPNav] URL import failed:', err);
-      errEl.textContent = err.message;
+      errEl.textContent = describeError(err);
       errEl.hidden = false;
     } finally {
       setLoadingState(container, false);
@@ -931,10 +944,10 @@ function wireEvents(container) {
   });
 
   // Mode toggle — Planning / Riding
-  container.querySelector('#mode-planning').addEventListener('click', () => {
+  on(container, '#mode-planning', 'click', () => {
     setMode(container, 'planning');
   });
-  container.querySelector('#mode-riding').addEventListener('click', () => {
+  on(container, '#mode-riding', 'click', () => {
     setMode(container, 'riding');
   });
 
@@ -993,9 +1006,7 @@ function wireEvents(container) {
       _isGhostMode = false;
       ghostOverlay.hidden = true;
       mapSection.hidden = false;
-      if (currentMap) {
-        requestAnimationFrame(() => currentMap.resize());
-      }
+      scheduleMapResize();
       if (wakeLock) {
         await wakeLock.release().catch(console.warn);
         wakeLock = null;
@@ -1061,7 +1072,7 @@ function wireEvents(container) {
         })
         .catch((err) => {
           console.error('[BPNav] Export failed:', err);
-          alert(`Failed to export plan: ${err.message}`);
+          alert(`Failed to export plan: ${describeError(err)}`);
         });
     }
   });
@@ -1128,8 +1139,8 @@ function wireEvents(container) {
       lastSearchResults.sort((a, b) => a.distanceFromStartMi - b.distanceFromStartMi);
       resultsDiv.innerHTML = renderOSMSearchResults(lastSearchResults, keyword);
     } catch (err) {
-      console.warn('[BPNav] OSM search failed:', err.message);
-      resultsDiv.innerHTML = `<p class="plan-empty" style="color: var(--md-sys-color-error);">Search failed: ${err.message}</p>`;
+      console.warn('[BPNav] OSM search failed:', describeError(err));
+      resultsDiv.innerHTML = `<p class="plan-empty" style="color: var(--md-sys-color-error);">Search failed: ${describeError(err)}</p>`;
     } finally {
       if (submitBtn) submitBtn.disabled = false;
     }
@@ -1355,7 +1366,7 @@ function applyMode(container) {
   if (ridingControls) ridingControls.hidden = planning;
 
   // The map is useful in both modes; ensure it re-flows after a visibility flip.
-  if (currentMap) requestAnimationFrame(() => currentMap.resize());
+  scheduleMapResize();
 }
 
 // ---------------------------------------------------------------------------
@@ -1497,9 +1508,11 @@ function toggleStop(container, id) {
 /** @param {HTMLElement} container @param {import('./gpx.js').RouteContext} route */
 function updateStatusChip(container, route) {
   const chip = container.querySelector('.status-chip');
-  chip.className = 'status-chip status-chip--active';
-  chip.textContent = route.name.length > 18 ? `${route.name.slice(0, 16)}…` : route.name;
-  chip.setAttribute('aria-label', `Route loaded: ${route.name}`);
+  if (chip) {
+    chip.className = 'status-chip status-chip--active';
+    chip.textContent = route.name.length > 18 ? `${route.name.slice(0, 16)}…` : route.name;
+    chip.setAttribute('aria-label', `Route loaded: ${route.name}`);
+  }
 
   const syncBtn = container.querySelector('#sync-map-btn');
   if (syncBtn) {
@@ -1590,10 +1603,10 @@ export function updateSunsprintDisplay(container, route, currentMile, paceMph) {
   const formatTime = (date) => date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const formattedEta = formatTime(result.eta);
 
-  card.querySelector('#sunsprint-sunrise').textContent = formatTime(result.sunrise);
-  card.querySelector('#sunsprint-sunset').textContent = formatTime(result.sunset);
-  card.querySelector('#sunsprint-eta-val').textContent = formattedEta;
-  card.querySelector('#sunsprint-eta-marker').hidden = false;
+  setText(card, '#sunsprint-sunrise', formatTime(result.sunrise));
+  setText(card, '#sunsprint-sunset', formatTime(result.sunset));
+  setText(card, '#sunsprint-eta-val', formattedEta);
+  setProps(card, '#sunsprint-eta-marker', { hidden: false });
 
   if (ghostEtaVal) {
     ghostEtaVal.textContent = formattedEta;
@@ -1608,15 +1621,16 @@ export function updateSunsprintDisplay(container, route, currentMile, paceMph) {
     pct = 100;
   }
 
-  card.querySelector('#sunsprint-progress-fill').style.width = `${pct}%`;
-  card.querySelector('#sunsprint-eta-marker').style.left = `${pct}%`;
+  setStyle(card, '#sunsprint-progress-fill', 'width', `${pct}%`);
+  setStyle(card, '#sunsprint-eta-marker', 'left', `${pct}%`);
 
   card.className = `daylight-bar-card daylight-bar-card--${result.status}`;
 
-  if (result.bufferMinutes < 0) {
-    bufferText.textContent = `🚨 Arriving ${Math.abs(Math.round(result.bufferMinutes))}m AFTER sunset at ${destinationName}`;
-  } else {
-    bufferText.textContent = `🌅 ${Math.round(result.bufferMinutes)}m daylight buffer to ${destinationName}`;
+  if (bufferText) {
+    bufferText.textContent =
+      result.bufferMinutes < 0
+        ? `🚨 Arriving ${Math.abs(Math.round(result.bufferMinutes))}m AFTER sunset at ${destinationName}`
+        : `🌅 ${Math.round(result.bufferMinutes)}m daylight buffer to ${destinationName}`;
   }
 
   // Haptic alert on transition to red alert (<30m)
@@ -1637,7 +1651,12 @@ export function updateSunsprintDisplay(container, route, currentMile, paceMph) {
 
 /** @param {HTMLElement} container @param {import('./gpx.js').RouteContext} route */
 function showMapSection(container, route) {
-  // Destroy previous map if one exists
+  // Destroy previous map if one exists. The pending syncMapState debounce must
+  // be cancelled too, or it fires ~40ms later against a torn-down map.
+  if (syncMapTimeout) {
+    clearTimeout(syncMapTimeout);
+    syncMapTimeout = null;
+  }
   if (currentMap) {
     destroyMap(currentMap);
     currentMap = null;
@@ -1668,9 +1687,11 @@ function showMapSection(container, route) {
   if (fabLinksEl) fabLinksEl.hidden = true;
 
   const fab = container.querySelector('.fab');
-  fab.setAttribute('aria-label', 'Load a different route');
-  fab.querySelector('.fab-label').textContent = 'Change Route';
-  fab.querySelector('.fab-icon').innerHTML = ICONS.swap;
+  if (fab) {
+    fab.setAttribute('aria-label', 'Load a different route');
+    setText(fab, '.fab-label', 'Change Route');
+    setHTML(fab, '.fab-icon', ICONS.swap);
+  }
 
   // Reveal start-at-mile control and reset to 0 for the new route
   const startRow = container.querySelector('#start-offset-row');
@@ -1687,7 +1708,10 @@ function showMapSection(container, route) {
   mapSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   // Initialise MapLibre — must happen after the section is visible
-  currentMap = initMap('map', route, [], []);
+  // activeStopIds must be a Set — an array would throw on .has(). Passing the
+  // route's own waypoints (rather than []) means markers render at init instead
+  // of only after the first syncMapState.
+  currentMap = initMap('map', route, getActiveStopIds(route, planOptions), route.waypoints);
 
   // Draw initial mile markers if checked
   const toggleMilesCheckbox = container.querySelector('#map-toggle-miles');
@@ -1705,24 +1729,26 @@ function showMapSection(container, route) {
 /** @param {HTMLElement} container @param {boolean} loading */
 function setLoadingState(container, loading) {
   const fab = container.querySelector('.fab');
+  if (!fab) return;
   fab.disabled = loading;
-  fab.querySelector('.fab-label').textContent = loading
-    ? 'Parsing…'
-    : currentRoute
-      ? 'Change Route'
-      : 'Load Route';
+  setText(fab, '.fab-label', loading ? 'Parsing…' : currentRoute ? 'Change Route' : 'Load Route');
 }
 
-/** @param {HTMLElement} container @param {string} m/** @param {HTMLElement} container @param {string} message */
+/** @param {HTMLElement} container @param {string} message */
 function showError(container, message) {
+  if (!container) return;
   // Remove any previous error
   container.querySelector('.parse-error')?.remove();
 
   const err = document.createElement('p');
   err.className = 'parse-error';
   err.setAttribute('role', 'alert');
-  err.textContent = `⚠ Could not load route: ${message}`;
-  container.querySelector('.dashboard').prepend(err);
+  err.textContent = `⚠ Could not load route: ${describeError(message)}`;
+  // Fall back to the container itself: an error still has to be visible even
+  // if the dashboard has not rendered. This path must never throw — it is what
+  // reports every other failure.
+  const host = container.querySelector('.dashboard') ?? container;
+  host.prepend(err);
 
   setTimeout(() => err.remove(), 6000);
 }
@@ -1794,7 +1820,7 @@ async function tryRestoreRoute(container) {
     kickoffCampEnrichment(container, route);
     kickoffResupplyEnrichment(container, route);
   } catch (err) {
-    console.warn('[BPNav] Could not restore saved route:', err.message);
+    console.warn('[BPNav] Could not restore saved route:', describeError(err));
   }
 }
 
@@ -1820,7 +1846,7 @@ async function kickoffWaterEnrichment(container, route) {
     syncMapState();
     saveEnrichment(route.waypoints).catch(() => {});
   } catch (err) {
-    console.warn('[BPNav] Water enrichment failed:', err.message);
+    console.warn('[BPNav] Water enrichment failed:', describeError(err));
   }
 }
 
@@ -1846,7 +1872,7 @@ async function kickoffCampEnrichment(container, route) {
     syncMapState();
     saveEnrichment(route.waypoints).catch(() => {});
   } catch (err) {
-    console.warn('[BPNav] Camp enrichment failed:', err.message);
+    console.warn('[BPNav] Camp enrichment failed:', describeError(err));
   }
 }
 
@@ -1872,7 +1898,7 @@ async function kickoffResupplyEnrichment(container, route) {
     syncMapState();
     saveEnrichment(route.waypoints).catch(() => {});
   } catch (err) {
-    console.warn('[BPNav] Resupply enrichment failed:', err.message);
+    console.warn('[BPNav] Resupply enrichment failed:', describeError(err));
   }
 }
 

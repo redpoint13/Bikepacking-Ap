@@ -8,6 +8,7 @@
  */
 
 import { calculateRouteDifficulty } from './difficulty.js';
+import { describeError } from './errorBoundary.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -827,7 +828,7 @@ export async function fetchOverpass(query) {
 
       return await res.json();
     } catch (err) {
-      console.warn(`[BPNav] Overpass query failed on ${url}:`, err.message);
+      console.warn(`[BPNav] Overpass query failed on ${url}:`, describeError(err));
       lastError = err;
       await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
     }
@@ -882,7 +883,7 @@ export async function fetchElevationFallback(route) {
       }
     }
   } catch (err) {
-    console.warn('[BPNav] Open-Topo-Data elevation fallback fetch failed:', err.message);
+    console.warn('[BPNav] Open-Topo-Data elevation fallback fetch failed:', describeError(err));
   }
 
   return route;

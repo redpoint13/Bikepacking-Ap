@@ -7,6 +7,7 @@
  * @module ui/routeLibraryModal
  */
 
+import { describeError } from '../errorBoundary.js';
 import {
   deleteRouteFromLibrary,
   getActiveRouteId,
@@ -225,7 +226,7 @@ export async function openRouteLibraryModal({ onSelectRoute, onUploadGPX, onImpo
         closeRouteLibraryModal();
         await onImportURL(url);
       } catch (err) {
-        alert(`Failed to import: ${err.message}`);
+        alert(`Failed to import: ${describeError(err)}`);
       } finally {
         urlSubmit.disabled = false;
         urlSubmit.textContent = 'Import URL';

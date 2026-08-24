@@ -10,6 +10,20 @@ import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderApp } from '../app.js';
 
+// Capture initMap's arguments while still running the real implementation.
+const { initMapArgs } = vi.hoisted(() => ({ initMapArgs: [] }));
+
+vi.mock('../map.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    initMap: (...args) => {
+      initMapArgs.push(args);
+      return actual.initMap(...args);
+    },
+  };
+});
+
 const SMALL_GPX = `<?xml version="1.0"?>
 <gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1">
   <trk><name>Leak Test</name><trkseg>
@@ -33,6 +47,7 @@ beforeEach(() => {
   );
 
   added = [];
+  initMapArgs.length = 0;
   origAdd = window.addEventListener.bind(window);
   vi.spyOn(window, 'addEventListener').mockImplementation((type, fn, opts) => {
     added.push(type);
@@ -46,6 +61,29 @@ afterEach(() => {
 });
 
 const countHighlight = () => added.filter((t) => t === 'bpnav-highlight-segment').length;
+
+describe('map initialisation', () => {
+  // Regression: initMap was called as initMap('map', route, [], []).
+  // The [] for activeStopIds is an Array where a Set is required — .has() would
+  // throw — and the [] for customWaypoints suppressed every marker at init,
+  // leaving the map bare until the first syncMapState.
+  it('passes a Set for activeStopIds and the route waypoints', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    renderApp(container);
+
+    const demoBtn = container.querySelector('#load-demo-btn');
+    demoBtn.click();
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 80));
+
+    expect(initMapArgs).toHaveLength(1);
+    const [, route, activeStopIds, customWaypoints] = initMapArgs[0];
+    expect(activeStopIds).toBeInstanceOf(Set);
+    expect(Array.isArray(customWaypoints)).toBe(true);
+    expect(customWaypoints).toBe(route.waypoints);
+  });
+});
 
 describe('bpnav-highlight-segment listener', () => {
   it('is registered exactly once when the app mounts', () => {

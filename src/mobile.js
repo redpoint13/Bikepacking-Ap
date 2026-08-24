@@ -9,6 +9,7 @@
 
 import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
+import { describeError } from './errorBoundary.js';
 
 let wakeLockSentinel = null;
 let lastBackPressTime = 0;
@@ -31,7 +32,7 @@ export async function setKeepAwake(enable) {
         });
       }
     } catch (err) {
-      console.warn('[BPNav] Failed to acquire Screen WakeLock:', err.message);
+      console.warn('[BPNav] Failed to acquire Screen WakeLock:', describeError(err));
     }
   } else {
     if (wakeLockSentinel) {
