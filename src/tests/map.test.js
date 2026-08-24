@@ -12,6 +12,8 @@ import {
   createMarkerElement,
   destroyMap,
   initMap,
+  updateMileMarkers,
+  updateMapDayPlan,
   updateMapWaypoints,
 } from '../map.js';
 
@@ -334,5 +336,68 @@ describe('destroyMap', () => {
 
   it('is a no-op when passed undefined', () => {
     expect(() => destroyMap(undefined)).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// updateMapDayPlan & updateMileMarkers
+// ---------------------------------------------------------------------------
+
+describe('updateMapDayPlan', () => {
+  let map;
+
+  beforeEach(() => {
+    map = initMap('map', MINIMAL_ROUTE);
+  });
+
+  it('updates map day plan without throwing errors', () => {
+    const dayPlan = [
+      {
+        day: 1,
+        startMi: 0,
+        chosen: { endMi: 15, isFinish: false },
+      },
+      {
+        day: 2,
+        startMi: 15,
+        chosen: { endMi: 30, isFinish: true },
+      },
+    ];
+
+    expect(() => {
+      updateMapDayPlan(map, MINIMAL_ROUTE.trackPoints, dayPlan);
+    }).not.toThrow();
+  });
+
+  it('handles empty dayPlan gracefully', () => {
+    expect(() => {
+      updateMapDayPlan(map, MINIMAL_ROUTE.trackPoints, []);
+    }).not.toThrow();
+  });
+
+  it('handles null map gracefully', () => {
+    expect(() => {
+      updateMapDayPlan(null, MINIMAL_ROUTE.trackPoints, []);
+    }).not.toThrow();
+  });
+});
+
+describe('updateMileMarkers', () => {
+  let map;
+
+  beforeEach(() => {
+    map = initMap('map', MINIMAL_ROUTE);
+  });
+
+  it('renders mile markers along the route without throwing', () => {
+    expect(() => {
+      updateMileMarkers(map, MINIMAL_ROUTE.trackPoints, true);
+    }).not.toThrow();
+  });
+
+  it('clears mile markers when show is false', () => {
+    expect(() => {
+      updateMileMarkers(map, MINIMAL_ROUTE.trackPoints, false);
+    }).not.toThrow();
   });
 });
