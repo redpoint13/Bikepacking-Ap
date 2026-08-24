@@ -162,8 +162,7 @@ export function openSegmentDrawer(analytics, callbacks = {}) {
     towns.length > 0
       ? `\n### 🏙️ Towns & Services Passed\n${towns
           .map(
-            (t) =>
-              `- **${t.name}** (Mile ${t.mile.toFixed(1)}${t.detourText}): ${t.description}`,
+            (t) => `- **${t.name}** (Mile ${t.mile.toFixed(1)}${t.detourText}): ${t.description}`,
           )
           .join('\n')}`
       : '';
