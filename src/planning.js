@@ -812,9 +812,9 @@ function repaint(root) {
  * @param {HTMLElement} root
  */
 function syncOptionsAndRepaint(root) {
-  const read = (id, fallback) => {
+  const read = (id, fallback, minVal = 0) => {
     const v = Number.parseFloat(root.querySelector(id)?.value);
-    return Number.isFinite(v) && v > 0 ? v : fallback;
+    return Number.isFinite(v) && v > minVal ? v : fallback;
   };
 
   const surfaceFactorVal = Number.parseFloat(root.querySelector('#plan-surface-factor')?.value);
@@ -830,8 +830,8 @@ function syncOptionsAndRepaint(root) {
 
   planOptions = {
     ...planOptions,
-    targetDailyMiles: read('#plan-daily', PLAN_DEFAULTS.targetDailyMiles),
-    waterCapacityOz: read('#plan-capacity', PLAN_DEFAULTS.waterCapacityOz),
+    targetDailyMiles: read('#plan-daily', PLAN_DEFAULTS.targetDailyMiles, 5),
+    waterCapacityOz: read('#plan-capacity', PLAN_DEFAULTS.waterCapacityOz, 10),
     ozPerMile: read('#plan-ozmile', PLAN_DEFAULTS.ozPerMile),
     reliableWaterThreshold: read('#plan-reliability', PLAN_DEFAULTS.reliableWaterThreshold),
     caloriesPerDay: read('#plan-calories', PLAN_DEFAULTS.caloriesPerDay),
@@ -978,7 +978,7 @@ export function renderPlanningView(root, route, options = null) {
   let debounceTimer = null;
   const debouncedSync = () => {
     if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => syncOptionsAndRepaint(root), 100);
+    debounceTimer = setTimeout(() => syncOptionsAndRepaint(root), 250);
   };
   controls.addEventListener('input', debouncedSync);
   controls.addEventListener('change', () => syncOptionsAndRepaint(root));

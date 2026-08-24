@@ -123,6 +123,40 @@ export function computeRouteDistance(points) {
  * @param {Array<[number, number]>} trackPoints
  * @returns {Float64Array}
  */
+
+/**
+ * Computes and caches a cumulative elevation gain array (in meters) for trackPoints.
+ * Enables O(1) elevation gain queries between any two track points.
+ * @param {Array<[number, number, number]>} trackPoints
+ * @returns {Float64Array}
+ */
+export function getOrCreateCumulativeGain(trackPoints) {
+  if (!trackPoints || trackPoints.length === 0) return new Float64Array(0);
+  if (
+    trackPoints._cumulativeGain &&
+    trackPoints._cumulativeGain.length === trackPoints.length
+  ) {
+    return trackPoints._cumulativeGain;
+  }
+  const gains = new Float64Array(trackPoints.length);
+  let accGain = 0;
+  let lastEle = trackPoints[0][2] || 0;
+  const THRESHOLD_M = 3; // ~10ft noise filter
+
+  for (let i = 1; i < trackPoints.length; i++) {
+    const ele = trackPoints[i][2] || 0;
+    const diff = ele - lastEle;
+    if (Math.abs(diff) > THRESHOLD_M) {
+      if (diff > 0) accGain += diff;
+      lastEle = ele;
+    }
+    gains[i] = accGain;
+  }
+
+  trackPoints._cumulativeGain = gains;
+  return gains;
+}
+
 export function getOrCreateCumulativeDistances(trackPoints) {
   if (!trackPoints || trackPoints.length === 0) return new Float64Array(0);
   if (
@@ -639,31 +673,41 @@ export function getTrackSegmentForMiles(trackPoints, startMi, endMi) {
  * @returns {{gainFt: number, lossFt: number}}
  */
 export function calculateElevation(trackPoints, startMi, endMi) {
-  const segment = getTrackSegmentForMiles(trackPoints, startMi, endMi);
-  if (segment.length < 2) return { gainFt: 0, lossFt: 0 };
+  if (!trackPoints || trackPoints.length < 2) return { gainFt: 0, lossFt: 0 };
+  const cumDist = getOrCreateCumulativeDistances(trackPoints);
+  const total = trackPoints._totalDistance || cumDist[cumDist.length - 1] || 0;
 
-  let gain = 0;
-  let loss = 0;
-  // Threshold to avoid accumulating micro-fluctuations (e.g., 3 meters ~ 10ft)
-  const THRESHOLD_M = 3;
+  let startIdx = 0;
+  let endIdx = trackPoints.length - 1;
 
-  let lastEle = segment[0][2] || 0;
-
-  for (let i = 1; i < segment.length; i++) {
-    const ele = segment[i][2] || 0;
-    const diff = ele - lastEle;
-
-    if (Math.abs(diff) > THRESHOLD_M) {
-      if (diff > 0) gain += diff;
-      else loss -= diff; // keep loss positive
-      lastEle = ele; // update only when we surpass threshold
-    }
+  let low = 0;
+  let high = cumDist.length - 1;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (cumDist[mid] < startMi) low = mid + 1;
+    else { startIdx = mid; high = mid - 1; }
   }
 
-  // Convert meters to feet
+  low = startIdx;
+  high = cumDist.length - 1;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (cumDist[mid] <= endMi) { endIdx = mid; low = mid + 1; }
+    else { high = mid - 1; }
+  }
+
+  if (endIdx <= startIdx) return { gainFt: 0, lossFt: 0 };
+
+  const cumGain = getOrCreateCumulativeGain(trackPoints);
+  const gainM = cumGain[endIdx] - cumGain[startIdx];
+  const startEleM = trackPoints[startIdx][2] || 0;
+  const endEleM = trackPoints[endIdx][2] || 0;
+  const netEleM = endEleM - startEleM;
+  const lossM = Math.max(0, gainM - netEleM);
+
   return {
-    gainFt: Math.round(gain * 3.28084),
-    lossFt: Math.round(loss * 3.28084),
+    gainFt: Math.round(gainM * 3.28084),
+    lossFt: Math.round(lossM * 3.28084),
   };
 }
 
