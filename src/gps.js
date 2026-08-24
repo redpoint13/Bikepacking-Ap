@@ -9,6 +9,7 @@
 
 import { Capacitor } from '@capacitor/core';
 import { Geolocation } from '@capacitor/geolocation';
+import { describeError } from './errorBoundary.js';
 import { haversineDistance } from './gpx.js';
 import { setKeepAwake } from './mobile.js';
 
@@ -98,7 +99,7 @@ export class GPSManager {
           },
           (position, err) => {
             if (err) {
-              console.warn('[BPNav] Native geolocation error:', err.message);
+              console.warn('[BPNav] Native geolocation error:', describeError(err));
               return;
             }
             if (!position?.coords) return;
@@ -109,7 +110,7 @@ export class GPSManager {
         );
         return;
       } catch (err) {
-        console.warn('[BPNav] Native Geolocation failed, falling back to web:', err.message);
+        console.warn('[BPNav] Native Geolocation failed, falling back to web:', describeError(err));
       }
     }
 
@@ -121,7 +122,7 @@ export class GPSManager {
           this._trigger({ lat: latitude, lon: longitude, accuracy, paceMph });
         },
         (error) => {
-          console.warn('[BPNav] Web geolocation error:', error.message);
+          console.warn('[BPNav] Web geolocation error:', describeError(error));
         },
         {
           enableHighAccuracy: true,
@@ -211,7 +212,7 @@ export class GPSManager {
           },
           (position, err) => {
             if (err) {
-              console.warn('[BPNav] Native low-power geolocation error:', err.message);
+              console.warn('[BPNav] Native low-power geolocation error:', describeError(err));
               return;
             }
             if (!position?.coords) return;
@@ -221,7 +222,10 @@ export class GPSManager {
         );
         return;
       } catch (err) {
-        console.warn('[BPNav] Native low-power Geolocation failed, fallback to web:', err.message);
+        console.warn(
+          '[BPNav] Native low-power Geolocation failed, fallback to web:',
+          describeError(err),
+        );
       }
     }
 
@@ -232,7 +236,7 @@ export class GPSManager {
           this._trigger({ lat: latitude, lon: longitude, accuracy, paceMph: 10 });
         },
         (error) => {
-          console.warn('[BPNav] Geolocation error:', error.message);
+          console.warn('[BPNav] Geolocation error:', describeError(error));
         },
         {
           enableHighAccuracy: false,

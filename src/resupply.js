@@ -8,6 +8,7 @@
  * @module resupply
  */
 
+import { describeError } from './errorBoundary.js';
 import { distanceFromStart, fetchOverpass, haversineDistance } from './gpx.js';
 
 /** Resupply stops within this many miles of the route are included. */
@@ -201,7 +202,7 @@ export async function fetchOSMResupply(bounds) {
     const data = await fetchOverpass(query);
     return data.elements ?? [];
   } catch (err) {
-    console.warn('[BPNav] OSM resupply fetch failed:', err.message);
+    console.warn('[BPNav] OSM resupply fetch failed:', describeError(err));
     return [];
   }
 }

@@ -11,6 +11,7 @@ import {
   buildPopupHTML,
   createMarkerElement,
   destroyMap,
+  highlightMapSegment,
   initMap,
   updateMapDayPlan,
   updateMapWaypoints,
@@ -405,6 +406,69 @@ describe('updateMapDayPlan', () => {
     expect(map.getSource('route-day-1')).toBeTruthy();
     expect(map.getSource('route-day-2')).toBeFalsy();
     expect(map.getLayer('route-line-day-2')).toBeFalsy();
+  });
+});
+
+describe('highlightMapSegment style-load race', () => {
+  /** Minimal fake whose style starts unloaded, so the deferral path is exercised. */
+  function makeUnloadedMap() {
+    const calls = { addSource: 0, addLayer: 0, deferred: [] };
+    const sources = new Map();
+    const map = {
+      isStyleLoaded: () => calls.styleLoaded === true,
+      once: (event, cb) => {
+        if (event === 'style.load') calls.deferred.push(cb);
+        return map;
+      },
+      getSource: (id) => sources.get(id) ?? null,
+      addSource: (id, src) => {
+        calls.addSource++;
+        sources.set(id, { ...src, setData: () => {} });
+        return map;
+      },
+      addLayer: () => {
+        calls.addLayer++;
+        return map;
+      },
+      fitBounds: () => map,
+      calls,
+    };
+    return map;
+  }
+
+  const trackPoints = Array.from({ length: 60 }, (_, i) => [35.0 + i * 0.002, -111.0, 2000 + i]);
+
+  // Regression: addSource/addLayer throw "Style is not done loading" when the
+  // rider clicks a segment before the style settles.
+  it('defers instead of touching the style before it loads', () => {
+    const map = makeUnloadedMap();
+
+    expect(() => highlightMapSegment(map, trackPoints, 0, 2)).not.toThrow();
+    expect(map.calls.addSource).toBe(0);
+    expect(map.calls.addLayer).toBe(0);
+    expect(map.calls.deferred).toHaveLength(1);
+  });
+
+  it('applies the highlight once the style loads', () => {
+    const map = makeUnloadedMap();
+    highlightMapSegment(map, trackPoints, 0, 2);
+
+    map.calls.styleLoaded = true;
+    for (const cb of map.calls.deferred) cb();
+
+    expect(map.calls.addSource).toBe(1);
+    expect(map.calls.addLayer).toBeGreaterThan(0);
+    expect(map.getSource('route-segment-highlight')).toBeTruthy();
+  });
+
+  it('adds the highlight immediately when the style is already loaded', () => {
+    const map = makeUnloadedMap();
+    map.calls.styleLoaded = true;
+
+    highlightMapSegment(map, trackPoints, 0, 2);
+
+    expect(map.calls.deferred).toHaveLength(0);
+    expect(map.calls.addSource).toBe(1);
   });
 });
 

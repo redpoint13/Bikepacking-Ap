@@ -55,7 +55,9 @@ function mapPanLink(name, mi) {
   return name;
 }
 
+import { describeError } from './errorBoundary.js';
 import { buildResourceLog } from './triplog.js';
+import { setHTML } from './utils/dom.js';
 
 // ---------------------------------------------------------------------------
 // Module state — current planning parameters (persist across re-renders)
@@ -727,7 +729,10 @@ function repaint(root) {
     ? `🏔️ Elevation Density: <strong>${routeDiff.hillinessFtPerMi} ft/mi</strong>`
     : '';
 
-  root.querySelector('#plan-summary').innerHTML = `
+  setHTML(
+    root,
+    '#plan-summary',
+    `
     <div style="display: flex; flex-direction: column; gap: 10px; width: 100%;">
       <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; flex-wrap: wrap; gap: 8px;">
         <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
@@ -791,11 +796,12 @@ function repaint(root) {
         <span>${habText}</span>
       </div>
     </div>
-  `;
-  root.querySelector('#plan-water').innerHTML = renderWaterCarry(plan.waterCarry);
-  root.querySelector('#plan-food').innerHTML = renderFoodCarry(plan.foodCarry);
-  root.querySelector('#plan-days').innerHTML = renderDayPlan(plan.dayPlan);
-  root.querySelector('#plan-log').innerHTML = renderLogTable(log, activeStopIds);
+  `,
+  );
+  setHTML(root, '#plan-water', renderWaterCarry(plan.waterCarry));
+  setHTML(root, '#plan-food', renderFoodCarry(plan.foodCarry));
+  setHTML(root, '#plan-days', renderDayPlan(plan.dayPlan));
+  setHTML(root, '#plan-log', renderLogTable(log, activeStopIds));
   const checklistsEl = root.querySelector('#plan-checklists');
   if (checklistsEl) {
     checklistsEl.innerHTML = renderChecklists(planRoute, plan);
@@ -1043,7 +1049,7 @@ export function renderPlanningView(root, route, options = null) {
         await sharePlan(newFilename, gpxString);
       } catch (err) {
         console.error('Export failed:', err);
-        alert(`Could not export plan: ${err.message}`);
+        alert(`Could not export plan: ${describeError(err)}`);
       }
     });
   }

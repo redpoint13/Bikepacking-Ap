@@ -102,6 +102,17 @@ function makePopup() {
   return p;
 }
 
+/** highlightMapSegment builds one of these to frame the highlighted segment. */
+class LngLatBounds {
+  constructor() {
+    this.points = [];
+  }
+  extend(coord) {
+    this.points.push(coord);
+    return this;
+  }
+}
+
 class NavigationControl {}
 class GeolocateControl {}
 
@@ -109,6 +120,7 @@ export default {
   Map: makeMap,
   Marker: makeMarker,
   Popup: makePopup,
+  LngLatBounds,
   NavigationControl,
   GeolocateControl,
 };

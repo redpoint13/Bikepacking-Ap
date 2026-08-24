@@ -5,6 +5,7 @@
  */
 
 import { getCoordinatesAtMile } from '../gpx.js';
+import { readValue } from '../utils/dom.js';
 
 export function openWaypointEditorModal({
   waypoint = null,
@@ -167,13 +168,13 @@ export function openWaypointEditorModal({
 
   // Form submit handler
   const form = modal.querySelector('#waypoint-form');
-  form.addEventListener('submit', (e) => {
+  form?.addEventListener('submit', (e) => {
     e.preventDefault();
     const selectedType = form.querySelector('input[name="wpt-type"]:checked')?.value || 'water';
-    const wptName = form.querySelector('#wpt-name').value.trim();
-    const wptMile = Number.parseFloat(form.querySelector('#wpt-mile').value) || 0;
-    const wptReliability = form.querySelector('#wpt-reliability').value;
-    const wptDesc = form.querySelector('#wpt-desc').value.trim();
+    const wptName = readValue(form, '#wpt-name');
+    const wptMile = Number.parseFloat(readValue(form, '#wpt-mile')) || 0;
+    const wptReliability = readValue(form, '#wpt-reliability');
+    const wptDesc = readValue(form, '#wpt-desc');
     const wptCampWater = form.querySelector('#wpt-camp-water')?.value || null;
     const wptCampFee = form.querySelector('#wpt-camp-fee')?.value.trim() || null;
 

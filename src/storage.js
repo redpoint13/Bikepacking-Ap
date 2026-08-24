@@ -7,6 +7,8 @@
  * @module storage
  */
 
+import { describeError } from './errorBoundary.js';
+
 const DB_NAME = 'bpnav-v1';
 const DB_VERSION = 2;
 const STORE_NAME = 'route';
@@ -45,7 +47,7 @@ export function openDB() {
       try {
         await migrateV1IfNeeded(db);
       } catch (err) {
-        console.warn('[BPNav] DB migration notice:', err.message);
+        console.warn('[BPNav] DB migration notice:', describeError(err));
       }
       resolve(db);
     };
