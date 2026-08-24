@@ -65,6 +65,8 @@ function makeMap() {
     panTo: () => map,
     setZoom: () => map,
     getZoom: () => 12,
+    // app.js calls resize() from requestAnimationFrame on mode/visibility flips.
+    resize: () => map,
     getCenter: () => ({ lat: 35.0, lng: -111.7 }),
     getBounds: () => ({
       getNorth: () => 36.0,
