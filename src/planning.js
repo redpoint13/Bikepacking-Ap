@@ -108,63 +108,63 @@ const TYPE_BADGE = {
 function renderControls(o) {
   return `
     <div class="plan-controls" id="plan-controls">
-      <label class="plan-field">
+      <label class="plan-field" for="plan-daily">
         <span class="plan-field__label">Daily target</span>
         <span class="plan-field__inputwrap">
           <input class="plan-input" type="number" id="plan-daily" min="5" step="5"
             value="${o.targetDailyMiles}" /> <span class="plan-field__unit">mi</span>
         </span>
       </label>
-      <label class="plan-field">
+      <label class="plan-field" for="plan-capacity">
         <span class="plan-field__label">Water capacity</span>
         <span class="plan-field__inputwrap">
           <input class="plan-input" type="number" id="plan-capacity" min="16" step="8"
             value="${o.waterCapacityOz}" /> <span class="plan-field__unit">oz</span>
         </span>
       </label>
-      <label class="plan-field">
+      <label class="plan-field" for="plan-ozmile">
         <span class="plan-field__label">Use rate</span>
         <span class="plan-field__inputwrap">
           <input class="plan-input" type="number" id="plan-ozmile" min="1" step="1"
             value="${o.ozPerMile}" /> <span class="plan-field__unit">oz/mi</span>
         </span>
       </label>
-      <label class="plan-field">
+      <label class="plan-field" for="plan-reliability">
         <span class="plan-field__label">Reliable water ≥</span>
         <span class="plan-field__inputwrap">
           <input class="plan-input" type="number" id="plan-reliability" min="0" max="100" step="5"
             value="${o.reliableWaterThreshold}" /> <span class="plan-field__unit">%</span>
         </span>
       </label>
-      <label class="plan-field">
+      <label class="plan-field" for="plan-calories">
         <span class="plan-field__label">Calorie target</span>
         <span class="plan-field__inputwrap">
           <input class="plan-input" type="number" id="plan-calories" min="1000" max="10000" step="100"
             value="${o.caloriesPerDay}" /> <span class="plan-field__unit">kcal/day</span>
         </span>
       </label>
-      <label class="plan-field">
+      <label class="plan-field" for="plan-campmeals">
         <span class="plan-field__label">Camp meals/day</span>
         <span class="plan-field__inputwrap">
           <input class="plan-input" type="number" id="plan-campmeals" min="0" max="5" step="1"
             value="${o.campMealsPerDay}" /> <span class="plan-field__unit">meals</span>
         </span>
       </label>
-      <label class="plan-field">
+      <label class="plan-field" for="plan-campcal">
         <span class="plan-field__label">Camp meal cal</span>
         <span class="plan-field__inputwrap">
           <input class="plan-input" type="number" id="plan-campcal" min="200" max="2000" step="50"
             value="${o.caloriesPerCampMeal}" /> <span class="plan-field__unit">kcal</span>
         </span>
       </label>
-      <label class="plan-field">
+      <label class="plan-field" for="plan-snackcal">
         <span class="plan-field__label">Avg snack cal</span>
         <span class="plan-field__inputwrap">
           <input class="plan-input" type="number" id="plan-snackcal" min="50" max="1000" step="10"
             value="${o.avgSnackCalories}" /> <span class="plan-field__unit">kcal</span>
         </span>
       </label>
-      <label class="plan-field" style="grid-column: span 2;">
+      <label class="plan-field" for="plan-surface-factor" style="grid-column: span 2;">
         <span class="plan-field__label">Terrain Surface Type</span>
         <span class="plan-field__inputwrap">
           <select class="plan-input" id="plan-surface-factor" style="padding: 4px 8px; font-size: 12px; height: 32px; width: 100%; border-radius: 4px;">
@@ -175,7 +175,7 @@ function renderControls(o) {
           </select>
         </span>
       </label>
-      <label class="plan-field" style="grid-column: span 2;">
+      <label class="plan-field" for="plan-detour" style="grid-column: span 2;">
         <span class="plan-field__label">Max detour distance (exclude stops further off-route unless necessary)</span>
         <span class="plan-field__inputwrap">
           <input class="plan-input" type="number" id="plan-detour" min="0.1" max="25" step="0.1"
@@ -988,6 +988,18 @@ export function renderPlanningView(root, route, options = null) {
   };
   controls.addEventListener('input', debouncedSync);
   controls.addEventListener('change', () => syncOptionsAndRepaint(root));
+  controls.addEventListener('click', (e) => {
+    const field = e.target.closest('.plan-field');
+    if (field) {
+      const input = field.querySelector('.plan-input');
+      if (input && e.target !== input) {
+        input.focus();
+        if (input.select && input.type === 'number') {
+          input.select();
+        }
+      }
+    }
+  });
 
   const voiceToggle = root.querySelector('#plan-voice-toggle');
   const readSummaryBtn = root.querySelector('#plan-read-summary-btn');
