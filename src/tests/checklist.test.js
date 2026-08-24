@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ESSENTIAL_GEAR_TEMPLATES,
+  copyTextToClipboard,
   generateStartChecklist,
   generateStopChecklists,
   getChecklistSummaryMarkdown,
@@ -189,6 +190,35 @@ describe('Checklist Generation Engine', () => {
       expect(md).toContain('Oak Creek Spring');
       expect(md).not.toContain('NaN');
       expect(md).not.toContain('undefined');
+    });
+    it('formats checked items with [x] in markdown output', () => {
+      const startChecklist = generateStartChecklist(MOCK_ROUTE, plan);
+      const stopChecklists = generateStopChecklists(MOCK_ROUTE, plan);
+
+      startChecklist[0].items[0].checked = true;
+      stopChecklists[0].items[0].checked = true;
+
+      const md = getChecklistSummaryMarkdown(startChecklist, stopChecklists);
+      expect(md).toContain('- [x]');
+      expect(md).toContain('- [ ]');
+    });
+  });
+
+  describe('copyTextToClipboard', () => {
+    it('returns false for non-string input', async () => {
+      expect(await copyTextToClipboard(null)).toBe(false);
+      expect(await copyTextToClipboard(undefined)).toBe(false);
+      expect(await copyTextToClipboard(123)).toBe(false);
+    });
+
+    it('handles clipboard writing with navigator.clipboard or execCommand mock', async () => {
+      Object.assign(navigator, {
+        clipboard: {
+          writeText: async () => {},
+        },
+      });
+      const success = await copyTextToClipboard('# Test Markdown');
+      expect(success).toBe(true);
     });
   });
 });

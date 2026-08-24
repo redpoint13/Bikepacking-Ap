@@ -519,3 +519,52 @@ export function getChecklistSummaryMarkdown(startChecklist, stopChecklists) {
 
   return md;
 }
+
+/**
+ * Copies text to the system clipboard with fallback support for insecure contexts.
+ * @param {string} text
+ * @returns {Promise<boolean>}
+ */
+export async function copyTextToClipboard(text) {
+  if (typeof text !== 'string') return false;
+
+  if (typeof navigator !== 'undefined' && navigator?.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (_err) {
+      // Fall through to fallback
+    }
+  }
+
+  if (typeof document !== 'undefined' && typeof document.execCommand === 'function') {
+    try {
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.setAttribute('readonly', '');
+      textArea.style.position = 'fixed';
+      textArea.style.top = '0';
+      textArea.style.left = '0';
+      textArea.style.width = '2em';
+      textArea.style.height = '2em';
+      textArea.style.padding = '0';
+      textArea.style.border = 'none';
+      textArea.style.outline = 'none';
+      textArea.style.boxShadow = 'none';
+      textArea.style.background = 'transparent';
+      textArea.style.opacity = '0.01';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      textArea.setSelectionRange(0, text.length);
+      const successful = document.execCommand('copy');
+      document.body.removeChild(textArea);
+      return Boolean(successful);
+    } catch (err) {
+      console.error('[BPNav] Fallback clipboard copy failed:', err);
+      return false;
+    }
+  }
+
+  return false;
+}

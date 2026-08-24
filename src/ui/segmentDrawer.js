@@ -1,3 +1,4 @@
+import { copyTextToClipboard } from '../checklist.js';
 /**
  * ui/segmentDrawer.js — Slide-up Segment Analytics Drawer component.
  *
@@ -276,8 +277,8 @@ ${tipLines}`;
 
   const copyBtn = container.querySelector('#btn-segment-copy');
   if (copyBtn) {
-    copyBtn.addEventListener('click', () => {
-      navigator.clipboard.writeText(summaryMarkdown);
+    copyBtn.addEventListener('click', async () => {
+      await copyTextToClipboard(summaryMarkdown);
       copyBtn.textContent = '✅ Copied Narrative!';
       setTimeout(() => {
         if (copyBtn) copyBtn.textContent = '📋 Copy Segment Narrative';

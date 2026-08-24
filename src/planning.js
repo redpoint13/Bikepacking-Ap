@@ -1360,12 +1360,31 @@ export function renderChecklists(route, plan) {
 function wireChecklistInteractions(root, route, plan) {
   const copyBtn = root.querySelector('#btn-copy-checklists');
   if (copyBtn) {
-    copyBtn.addEventListener('click', () => {
+    copyBtn.addEventListener('click', async () => {
       const startChecklist = generateStartChecklist(route, plan);
       const stopChecklists = generateStopChecklists(route, plan);
+
+      // Preserve currently checked state from DOM
+      const checkedIds = new Set(
+        Array.from(root.querySelectorAll('.checklist-checkbox:checked')).map(
+          (cb) => cb.dataset.id,
+        ),
+      );
+
+      for (const cat of startChecklist) {
+        for (const item of cat.items) {
+          item.checked = checkedIds.has(item.id);
+        }
+      }
+      for (const stop of stopChecklists) {
+        for (const item of stop.items) {
+          item.checked = checkedIds.has(item.id);
+        }
+      }
+
       const md = getChecklistSummaryMarkdown(startChecklist, stopChecklists);
-      navigator.clipboard.writeText(md);
-      copyBtn.textContent = '✅ Copied!';
+      const copied = await copyTextToClipboard(md);
+      copyBtn.textContent = copied ? '✅ Copied!' : '⚠️ Copy Failed';
       setTimeout(() => {
         if (copyBtn) copyBtn.textContent = '📋 Copy Markdown';
       }, 2000);
