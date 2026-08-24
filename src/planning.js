@@ -1366,9 +1366,7 @@ function wireChecklistInteractions(root, route, plan) {
 
       // Preserve currently checked state from DOM
       const checkedIds = new Set(
-        Array.from(root.querySelectorAll('.checklist-checkbox:checked')).map(
-          (cb) => cb.dataset.id,
-        ),
+        Array.from(root.querySelectorAll('.checklist-checkbox:checked')).map((cb) => cb.dataset.id),
       );
 
       for (const cat of startChecklist) {
