@@ -179,9 +179,11 @@ describe('computeWaterDemand', () => {
   });
 
   it('survives a route with no usable track points', () => {
-    expect(computeWaterDemand({ totalDistanceMiles: 10, trackPoints: [] }, 0, 10, {
-      ozPerMile: 5,
-    })).toBe(50);
+    expect(
+      computeWaterDemand({ totalDistanceMiles: 10, trackPoints: [] }, 0, 10, {
+        ozPerMile: 5,
+      }),
+    ).toBe(50);
     expect(computeWaterDemand({ totalDistanceMiles: 10 }, 0, 10, { ozPerMile: 5 })).toBe(50);
   });
 });

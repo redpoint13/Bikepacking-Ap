@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { PLAN_DEFAULTS, buildPlan, clearPlanCache } from '../plan.js';
+import { markWaypointsChanged } from '../gpx.js';
+import { PLAN_DEFAULTS, buildPlan, clearPlanCache, getActiveStopIds } from '../plan.js';
 
 /**
  * A single planning-control edit calls buildPlan up to nine times with identical
@@ -82,6 +83,70 @@ describe('buildPlan memoization', () => {
     route.waypoints = [...route.waypoints]; // same length, new identity
     const b = buildPlan(route, opts);
     expect(b).not.toBe(a);
+  });
+
+  it('recomputes when a waypoint is replaced in place', () => {
+    // The waypoint editor does `waypoints[idx] = wpt`, which preserves both array
+    // identity and length. Without an explicit revision the memo cannot see it.
+    const route = makeRoute();
+    const opts = { ...PLAN_DEFAULTS };
+    const a = buildPlan(route, opts);
+    const idx = route.waypoints.findIndex((w) => w.id === 'w-0');
+    route.waypoints[idx] = { ...route.waypoints[idx], reliability: 5 };
+    markWaypointsChanged(route);
+    const b = buildPlan(route, opts);
+    expect(b).not.toBe(a);
+  });
+
+  it('recomputes when waypoints are re-sorted in place', () => {
+    // Moving a waypoint changes distanceFromStartMi, and the editor then sorts
+    // in place — again no change to identity or length.
+    const route = makeRoute();
+    const opts = { ...PLAN_DEFAULTS };
+    const a = buildPlan(route, opts);
+    route.waypoints[0].distanceFromStartMi = 95;
+    route.waypoints.sort((x, y) => x.distanceFromStartMi - y.distanceFromStartMi);
+    markWaypointsChanged(route);
+    const b = buildPlan(route, opts);
+    expect(b).not.toBe(a);
+    expect(b.waterCarry).not.toEqual(a.waterCarry);
+  });
+
+  it('invalidates the active-stop set on an in-place edit too', () => {
+    const route = makeRoute();
+    const opts = { ...PLAN_DEFAULTS };
+    const a = getActiveStopIds(route, opts);
+    const idx = route.waypoints.findIndex((w) => w.id === 'w-0');
+    route.waypoints[idx] = { ...route.waypoints[idx], type: 'camping' };
+    markWaypointsChanged(route);
+    const b = getActiveStopIds(route, opts);
+    expect(b).not.toBe(a);
+  });
+
+  it('invalidates on the revision bump alone', () => {
+    // markWaypointsChanged both re-seats the array and bumps the revision, so
+    // the array identity check would mask this. Bump alone to pin that the
+    // revision genuinely participates in the key.
+    const route = makeRoute();
+    const opts = { ...PLAN_DEFAULTS };
+    const a = buildPlan(route, opts);
+    route.waypoints[0].reliability = 5; // in place, array untouched
+    route.waypointsRevision = (route.waypointsRevision ?? 0) + 1;
+    const b = buildPlan(route, opts);
+    expect(b).not.toBe(a);
+  });
+
+  it('documents that an unmarked in-place edit is NOT seen', () => {
+    // This is the contract: every waypoint mutation must go through
+    // markWaypointsChanged. An in-place edit that skips it is invisible to the
+    // memo by design — identity, length and revision are all unchanged. If this
+    // ever starts failing the memo grew a content check and this test can go.
+    const route = makeRoute();
+    const opts = { ...PLAN_DEFAULTS };
+    const a = buildPlan(route, opts);
+    route.waypoints[0].reliability = 5;
+    const b = buildPlan(route, opts);
+    expect(b).toBe(a);
   });
 
   it('recomputes for a different route object', () => {

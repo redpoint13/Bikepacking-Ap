@@ -64,7 +64,9 @@ function makeMap() {
       // Real MapLibre throws if a layer still reads from the source.
       for (const layer of layers.values()) {
         if (layer.source === id) {
-          throw new Error(`Source "${id}" cannot be removed while layer "${layer.id}" is using it.`);
+          throw new Error(
+            `Source "${id}" cannot be removed while layer "${layer.id}" is using it.`,
+          );
         }
       }
       stats.removeSource++;

@@ -55,7 +55,8 @@ export function capEnrichedWaypoints(waypoints, limits) {
   // Best first, so the survivor of a cluster is the most dependable one.
   // Distance breaks ties to keep the result stable across runs.
   candidates.sort(
-    (a, b) => (b.reliability ?? 0) - (a.reliability ?? 0) || a.distanceFromStartMi - b.distanceFromStartMi,
+    (a, b) =>
+      (b.reliability ?? 0) - (a.reliability ?? 0) || a.distanceFromStartMi - b.distanceFromStartMi,
   );
 
   // Accepted positions along the route, kept sorted so the spacing check is a

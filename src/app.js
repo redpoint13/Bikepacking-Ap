@@ -18,6 +18,7 @@ import {
   fetchOverpass,
   getCoordinatesAtMile,
   haversineDistance,
+  markWaypointsChanged,
   nearestTrackPointIndex,
   nextWaypointOfType,
   osmElementLabel,
@@ -711,6 +712,7 @@ function wireEvents(container) {
         const route = await parseGPXAsync(record.gpxText);
         if (record.waypoints?.length) {
           route.waypoints = sanitizeWaypoints(record.waypoints);
+          markWaypointsChanged(route);
         }
         applyRoute(container, route, true);
         kickoffWaterEnrichment(container, route);
@@ -725,7 +727,10 @@ function wireEvents(container) {
             const bundle = JSON.parse(text);
             if (bundle.version && bundle.gpxText) {
               const route = await parseGPXAsync(bundle.gpxText);
-              if (bundle.waypoints) route.waypoints = sanitizeWaypoints(bundle.waypoints);
+              if (bundle.waypoints) {
+                route.waypoints = sanitizeWaypoints(bundle.waypoints);
+                markWaypointsChanged(route);
+              }
               const routeId = await saveRouteToLibrary({
                 name:
                   bundle.name ||
@@ -839,6 +844,7 @@ function wireEvents(container) {
           const route = await parseGPXAsync(bundle.gpxText);
           if (bundle.waypoints) {
             route.waypoints = sanitizeWaypoints(bundle.waypoints);
+            markWaypointsChanged(route);
             await saveEnrichment(route.waypoints).catch(() => {});
           }
 
@@ -1177,6 +1183,7 @@ function wireEvents(container) {
 
     currentRoute.waypoints.push(customWp);
     currentRoute.waypoints.sort((a, b) => a.distanceFromStartMi - b.distanceFromStartMi);
+    markWaypointsChanged(currentRoute);
 
     await saveEnrichment(currentRoute.waypoints).catch(() => {});
     updateResourceCards(container, currentRoute);
@@ -1199,6 +1206,7 @@ function wireEvents(container) {
       currentRoute.waypoints.push(wpt);
     }
     currentRoute.waypoints.sort((a, b) => a.distanceFromStartMi - b.distanceFromStartMi);
+    markWaypointsChanged(currentRoute);
 
     updateResourceCards(container, currentRoute);
     updatePlanningView(container.querySelector('#planning-view'), currentRoute, planOptions);
@@ -1213,14 +1221,15 @@ function wireEvents(container) {
   function handleDeleteCustomWaypoint(wptId) {
     if (!currentRoute) return;
     currentRoute.waypoints = currentRoute.waypoints.filter((w) => w.id !== wptId);
+    markWaypointsChanged(currentRoute);
 
     updateResourceCards(container, currentRoute);
     updatePlanningView(container.querySelector('#planning-view'), currentRoute, planOptions);
     updateRouteStats(container, currentRoute, planOptions);
     syncMapState();
-    if (currentMap && wpt.lon && wpt.lat) {
-      currentMap.flyTo({ center: [wpt.lon, wpt.lat], zoom: Math.max(currentMap.getZoom(), 12) });
-    }
+    // No fly-to here: the waypoint just went away. This used to reference an
+    // out-of-scope `wpt`, throwing a ReferenceError before saveEnrichment ran,
+    // so deletions were never persisted.
     saveEnrichment(currentRoute.waypoints).catch(() => {});
   }
 
@@ -1808,6 +1817,7 @@ async function tryRestoreRoute(container) {
     const cachedWaypoints = await loadEnrichment().catch(() => null);
     if (cachedWaypoints?.length) {
       route.waypoints = sanitizeWaypoints(cachedWaypoints);
+      markWaypointsChanged(route);
       updateResourceCards(container, route);
       updatePlanningView(container.querySelector('#planning-view'), route, planOptions);
       updateRouteStats(container, route, planOptions);
@@ -1839,6 +1849,7 @@ async function kickoffWaterEnrichment(container, route) {
       ...route.waypoints.filter((w) => w.type !== 'water' || w.id.startsWith('user-')),
       ...enrichedWater,
     ].sort((a, b) => a.distanceFromStartMi - b.distanceFromStartMi);
+    markWaypointsChanged(route);
 
     updateResourceCards(container, route);
     updatePlanningView(container.querySelector('#planning-view'), route, planOptions);
@@ -1865,6 +1876,7 @@ async function kickoffCampEnrichment(container, route) {
       ...route.waypoints.filter((w) => w.type !== 'camping' || w.id.startsWith('user-')),
       ...enrichedCamps,
     ].sort((a, b) => a.distanceFromStartMi - b.distanceFromStartMi);
+    markWaypointsChanged(route);
 
     updateResourceCards(container, route);
     updatePlanningView(container.querySelector('#planning-view'), route, planOptions);
@@ -1891,6 +1903,7 @@ async function kickoffResupplyEnrichment(container, route) {
       ...route.waypoints.filter((w) => w.type !== 'resupply' || w.id.startsWith('user-')),
       ...enrichedResupply,
     ].sort((a, b) => a.distanceFromStartMi - b.distanceFromStartMi);
+    markWaypointsChanged(route);
 
     updateResourceCards(container, route);
     updatePlanningView(container.querySelector('#planning-view'), route, planOptions);

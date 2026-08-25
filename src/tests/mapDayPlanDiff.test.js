@@ -101,7 +101,11 @@ describe('updateMapDayPlan diffing', () => {
 
     map._resetStats();
     // Same day 8, now at index 1 of a three-day plan.
-    updateMapDayPlan(map, trackPoints, full.filter((d) => d.day >= 7));
+    updateMapDayPlan(
+      map,
+      trackPoints,
+      full.filter((d) => d.day >= 7),
+    );
     const after = map._layers.get('route-line-day-8').paint['line-color'];
 
     expect(after).not.toBe(before);

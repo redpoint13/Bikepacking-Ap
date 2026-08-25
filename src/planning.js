@@ -1064,9 +1064,36 @@ export function renderPlanningView(root, route, options = null) {
     normalizeInputValue(e.target);
     scheduleSync();
   });
-  // Widens the click target to the whole field. Note that a label wrapping its
-  // own input delivers TWO click events here for one gesture — the real one, and
-  // the activation click the browser forwards to the input. That is inherent to
+  // Select the whole value when a field gains focus.
+  //
+  // This is what makes the controls editable at all. The input is styled to fill
+  // its whole box, so a click almost always lands on the input itself and drops
+  // a caret wherever it hit — typing "60" into a field showing "45" produced
+  // "4605". The click handler below was meant to select-all, but it deliberately
+  // skips when the target IS the input, which by then was every ordinary click,
+  // so it never ran.
+  //
+  // focusin rather than focus, because focus does not bubble and these are
+  // delegated. Selecting only on focus keeps precise editing intact: once the
+  // field is focused, a further click places a caret as normal.
+  //
+  // selectionStart/End read back as null on type="number" — the selection API is
+  // not exposed for that type — but select() itself works, verified in Chrome.
+  controls.addEventListener('focusin', (e) => {
+    const el = e.target;
+    if (
+      el instanceof HTMLInputElement &&
+      el.type === 'number' &&
+      el.classList.contains('plan-input')
+    ) {
+      el.select();
+    }
+  });
+
+  // Widens the click target to the whole field, for the label text and the wrap
+  // padding either side of the input. Note that a label wrapping its own input
+  // delivers TWO click events here for one gesture — the real one, and the
+  // activation click the browser forwards to the input. That is inherent to
   // label-wrapped inputs, not a bug in the markup: dropping the (redundant) for=
   // attribute does not change it, because the implicit association forwards too.
   // Skipping when the target is the input itself makes the pair idempotent.
@@ -1075,10 +1102,8 @@ export function renderPlanningView(root, route, options = null) {
     if (field) {
       const input = field.querySelector('.plan-input');
       if (input && e.target !== input) {
+        // focusin does the selecting; this only needs to move focus.
         input.focus();
-        if (input.select && input.type === 'number') {
-          input.select();
-        }
       }
     }
   });

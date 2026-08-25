@@ -1014,9 +1014,9 @@ export function clearPlanCache() {
  */
 function planCacheKeyFor(route, opts) {
   try {
-    return `${route?.waypoints?.length ?? 0}|${route?.trackPoints?.length ?? 0}|${
-      route?.totalDistanceMiles ?? 0
-    }|${JSON.stringify(opts)}`;
+    return `${route?.waypointsRevision ?? 0}|${route?.waypoints?.length ?? 0}|${
+      route?.trackPoints?.length ?? 0
+    }|${route?.totalDistanceMiles ?? 0}|${JSON.stringify(opts)}`;
   } catch {
     return null;
   }

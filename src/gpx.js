@@ -133,10 +133,7 @@ export function computeRouteDistance(points) {
  */
 export function getOrCreateCumulativeGain(trackPoints) {
   if (!trackPoints || trackPoints.length === 0) return new Float64Array(0);
-  if (
-    trackPoints._cumulativeGain &&
-    trackPoints._cumulativeGain.length === trackPoints.length
-  ) {
+  if (trackPoints._cumulativeGain && trackPoints._cumulativeGain.length === trackPoints.length) {
     return trackPoints._cumulativeGain;
   }
   const gains = new Float64Array(trackPoints.length);
@@ -551,6 +548,29 @@ export function applyStartOffset(route, offsetMi) {
   return { ...route, startOffsetMi: clampedOffset, waypoints: adjustedWaypoints };
 }
 
+/**
+ * Marks a route's waypoints as changed.
+ *
+ * The planning engine memoizes on the waypoint array, so any mutation has to be
+ * visible to it. Reassignment and push/filter are visible through array identity
+ * and length, but replacing an element in place (`waypoints[i] = wp`) or sorting
+ * in place changes neither — which would serve a stale plan after editing an
+ * existing waypoint.
+ *
+ * Call this after ANY change to route.waypoints. It re-seats the array so
+ * identity-based consumers invalidate, and bumps an explicit revision so the
+ * memo has an O(1) signal that does not depend on what changed.
+ *
+ * @param {RouteContext} route
+ * @returns {RouteContext} the same route, for chaining
+ */
+export function markWaypointsChanged(route) {
+  if (!route) return route;
+  route.waypoints = Array.isArray(route.waypoints) ? [...route.waypoints] : [];
+  route.waypointsRevision = (route.waypointsRevision ?? 0) + 1;
+  return route;
+}
+
 // ---------------------------------------------------------------------------
 // Convenience query helpers (used by status cards)
 // ---------------------------------------------------------------------------
@@ -676,7 +696,6 @@ export function getTrackSegmentForMiles(trackPoints, startMi, endMi) {
 export function calculateElevation(trackPoints, startMi, endMi) {
   if (!trackPoints || trackPoints.length < 2) return { gainFt: 0, lossFt: 0 };
   const cumDist = getOrCreateCumulativeDistances(trackPoints);
-  const total = trackPoints._totalDistance || cumDist[cumDist.length - 1] || 0;
 
   let startIdx = 0;
   let endIdx = trackPoints.length - 1;
@@ -686,15 +705,22 @@ export function calculateElevation(trackPoints, startMi, endMi) {
   while (low <= high) {
     const mid = (low + high) >> 1;
     if (cumDist[mid] < startMi) low = mid + 1;
-    else { startIdx = mid; high = mid - 1; }
+    else {
+      startIdx = mid;
+      high = mid - 1;
+    }
   }
 
   low = startIdx;
   high = cumDist.length - 1;
   while (low <= high) {
     const mid = (low + high) >> 1;
-    if (cumDist[mid] <= endMi) { endIdx = mid; low = mid + 1; }
-    else { high = mid - 1; }
+    if (cumDist[mid] <= endMi) {
+      endIdx = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
   }
 
   if (endIdx <= startIdx) return { gainFt: 0, lossFt: 0 };
