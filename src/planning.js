@@ -919,21 +919,14 @@ function syncOptionsAndRepaint(root) {
     maxDetourMi: read('#plan-detour', PLAN_DEFAULTS.maxDetourMi),
     surfaceFactor,
     optimizeWaterStops,
-    targetWaterIntervalMi: read(
-      '#plan-target-water-interval',
-      PLAN_DEFAULTS.targetWaterIntervalMi,
-      5,
-      80,
-    ),
+    targetWaterIntervalMi: read('#plan-target-water-interval', PLAN_DEFAULTS.targetWaterIntervalMi),
     waterSafetyMarginPercent: read(
       '#plan-water-safety-margin',
       PLAN_DEFAULTS.waterSafetyMarginPercent,
-      5,
-      50,
     ),
-    campWaterReserveOz: read('#plan-camp-water-reserve', PLAN_DEFAULTS.campWaterReserveOz, 0, 150),
-    stopOverheadMinutes: read('#plan-stop-overhead', PLAN_DEFAULTS.stopOverheadMinutes, 0, 120),
-    waterWeightPenalty: read('#plan-weight-penalty', PLAN_DEFAULTS.waterWeightPenalty, 0, 10),
+    campWaterReserveOz: read('#plan-camp-water-reserve', PLAN_DEFAULTS.campWaterReserveOz),
+    stopOverheadMinutes: read('#plan-stop-overhead', PLAN_DEFAULTS.stopOverheadMinutes),
+    waterWeightPenalty: read('#plan-weight-penalty', PLAN_DEFAULTS.waterWeightPenalty),
   };
   persistUserPreferences(planOptions);
   isSyncing = true;
@@ -1147,12 +1140,6 @@ export function renderPlanningView(root, route, options = null) {
         input.focus();
       }
       return;
-    }
-
-    const inputWrap = e.target.closest('.plan-field__inputwrap');
-    if (inputWrap && e.target === inputWrap) {
-      const input = inputWrap.querySelector('.plan-input');
-      if (input) input.focus();
     }
   });
 
