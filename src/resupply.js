@@ -8,6 +8,7 @@
  * @module resupply
  */
 
+import { ENRICHMENT_LIMITS, capEnrichedWaypoints } from './enrichmentLimits.js';
 import { describeError } from './errorBoundary.js';
 import { distanceFromStart, fetchOverpass, haversineDistance } from './gpx.js';
 
@@ -253,7 +254,7 @@ export function mergeResupplySources(route, osmElements) {
     });
   }
 
-  return merged.sort((a, b) => a.distanceFromStartMi - b.distanceFromStartMi);
+  return capEnrichedWaypoints(merged, ENRICHMENT_LIMITS.resupply);
 }
 
 // ---------------------------------------------------------------------------

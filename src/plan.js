@@ -983,17 +983,31 @@ let planCacheRoute = null;
 let planCacheWaypoints = null;
 let planCacheValue = null;
 
-/** Drops the memoized plan. Exported for tests and explicit invalidation. */
+/**
+ * The same memo applied to getActiveStopIds, which repeats its own water-stop
+ * optimization and emergency resolution on top of buildPlan and is called three
+ * times per update (the planning repaint, the route stats bar, and the map sync).
+ */
+let stopIdsCacheKey = null;
+let stopIdsCacheRoute = null;
+let stopIdsCacheWaypoints = null;
+let stopIdsCacheValue = null;
+
+/** Drops the memoized plan and active-stop set. Exported for tests. */
 export function clearPlanCache() {
   planCacheKey = null;
   planCacheRoute = null;
   planCacheWaypoints = null;
   planCacheValue = null;
+  stopIdsCacheKey = null;
+  stopIdsCacheRoute = null;
+  stopIdsCacheWaypoints = null;
+  stopIdsCacheValue = null;
 }
 
 /**
- * Builds the memo key, or returns null when the options cannot be fingerprinted
- * (which forces a miss).
+ * Builds a memo key for a (route, options) pair, or returns null when the
+ * options cannot be fingerprinted (which forces a miss).
  * @param {import('./gpx.js').RouteContext} route
  * @param {Partial<typeof PLAN_DEFAULTS>} opts
  * @returns {string | null}
@@ -1055,6 +1069,16 @@ export function buildPlan(route, opts = {}) {
 export function getActiveStopIds(route, opts) {
   const activeIds = new Set();
   if (!route) return activeIds;
+
+  const cacheKey = planCacheKeyFor(route, opts);
+  if (
+    cacheKey !== null &&
+    cacheKey === stopIdsCacheKey &&
+    route === stopIdsCacheRoute &&
+    route.waypoints === stopIdsCacheWaypoints
+  ) {
+    return stopIdsCacheValue;
+  }
 
   const total = route.totalDistanceMiles ?? 0;
   const waypoints = [...route.waypoints].sort(
@@ -1215,6 +1239,10 @@ export function getActiveStopIds(route, opts) {
     activeIds.add(wp.id);
   }
 
+  stopIdsCacheKey = cacheKey;
+  stopIdsCacheRoute = route;
+  stopIdsCacheWaypoints = route.waypoints;
+  stopIdsCacheValue = activeIds;
   return activeIds;
 }
 

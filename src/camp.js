@@ -2,6 +2,7 @@
  * camp.js — Camp site enrichment for Bikepacker Navigator.
  */
 
+import { ENRICHMENT_LIMITS, capEnrichedWaypoints } from './enrichmentLimits.js';
 import { describeError } from './errorBoundary.js';
 import { distanceFromStart, fetchOverpass, haversineDistance } from './gpx.js';
 const ROUTE_PROXIMITY_MI = 2.0;
@@ -280,7 +281,7 @@ export function mergeCampSources(route, osmElements) {
     });
   }
 
-  return merged.sort((a, b) => a.distanceFromStartMi - b.distanceFromStartMi);
+  return capEnrichedWaypoints(merged, ENRICHMENT_LIMITS.camping);
 }
 
 export async function enrichCampSources(route) {

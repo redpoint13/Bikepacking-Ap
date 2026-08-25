@@ -577,7 +577,45 @@ export function updateMileMarkers(map, trackPoints, show) {
 const dayLabelsMap = new WeakMap();
 
 /**
+ * Day numbers currently drawn on each map, so an update can diff against them
+ * instead of reading the whole style back.
+ * @type {WeakMap<maplibregl.Map, number[]>}
+ */
+const dayLayersMap = new WeakMap();
+
+/** Per-day route line colours, cycled. */
+const DAY_COLORS = [
+  '#78dc95', // Green (primary)
+  '#29b6f6', // Light Blue
+  '#ab47bc', // Purple
+  '#ff7043', // Orange/Coral
+  '#fdd835', // Yellow
+  '#26a69a', // Teal
+  '#ec407a', // Pink
+];
+
+/**
+ * Tears down the line + glow layers and the source backing one day segment.
+ * @param {maplibregl.Map} map
+ * @param {number} day
+ */
+function removeDayLayers(map, day) {
+  // Layers must go before the source they read from.
+  for (const id of [`route-glow-day-${day}`, `route-line-day-${day}`]) {
+    if (map.getLayer(id)) map.removeLayer(id);
+  }
+  const sourceId = `route-day-${day}`;
+  if (map.getSource(sourceId)) map.removeSource(sourceId);
+}
+
+/**
  * Updates the map route segments and adds text pill markers for day boundaries.
+ *
+ * Day segments are diffed against what is already on the map: an existing day
+ * keeps its source and layers and only has its geometry and colour updated, and
+ * only days that genuinely disappeared are removed. Rebuilding every source on
+ * every call forced MapLibre to re-tile the whole route each time, which is the
+ * dominant cost of a planning-control edit.
  *
  * @param {maplibregl.Map | null} map
  * @param {Array<[number, number]>} trackPoints
@@ -591,22 +629,14 @@ export function updateMapDayPlan(map, trackPoints, dayPlan) {
   }
 
   // --- 1. Update Day Route Line Segments ---
-  const style = map.getStyle();
-  if (style) {
-    const dayLayers = style.layers.filter(
-      (l) => l.id.startsWith('route-line-day-') || l.id.startsWith('route-glow-day-'),
-    );
-    for (const layer of dayLayers) {
-      map.removeLayer(layer.id);
-    }
-    const daySources = Object.keys(style.sources).filter((s) => s.startsWith('route-day-'));
-    for (const source of daySources) {
-      map.removeSource(source);
-    }
-  }
+  const previousDays = dayLayersMap.get(map) ?? [];
 
   // If there's no day plan or it is empty, make sure the original route lines are visible
   if (!dayPlan || dayPlan.length === 0) {
+    for (const day of previousDays) {
+      removeDayLayers(map, day);
+    }
+    dayLayersMap.set(map, []);
     if (map.getLayer('route-line')) map.setLayoutProperty('route-line', 'visibility', 'visible');
     if (map.getLayer('route-glow')) map.setLayoutProperty('route-glow', 'visibility', 'visible');
   } else {
@@ -614,17 +644,10 @@ export function updateMapDayPlan(map, trackPoints, dayPlan) {
     if (map.getLayer('route-line')) map.setLayoutProperty('route-line', 'visibility', 'none');
     if (map.getLayer('route-glow')) map.setLayoutProperty('route-glow', 'visibility', 'none');
 
-    const colors = [
-      '#78dc95', // Green (primary)
-      '#29b6f6', // Light Blue
-      '#ab47bc', // Purple
-      '#ff7043', // Orange/Coral
-      '#fdd835', // Yellow
-      '#26a69a', // Teal
-      '#ec407a', // Pink
-    ];
+    const renderedDays = [];
 
     dayPlan.forEach((d, index) => {
+      if (!d.chosen) return;
       const segmentPoints = getTrackSegmentForMiles(trackPoints, d.startMi, d.chosen.endMi);
       if (segmentPoints.length < 2) return;
 
@@ -632,29 +655,28 @@ export function updateMapDayPlan(map, trackPoints, dayPlan) {
       const sourceId = `route-day-${d.day}`;
       const lineLayerId = `route-line-day-${d.day}`;
       const glowLayerId = `route-glow-day-${d.day}`;
-      const color = colors[index % colors.length];
+      const color = DAY_COLORS[index % DAY_COLORS.length];
+      const data = {
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates },
+        properties: {},
+      };
 
-      if (map.getSource(sourceId)) {
-        map.getSource(sourceId).setData({
-          type: 'Feature',
-          geometry: { type: 'LineString', coordinates },
-          properties: {},
-        });
+      const existingSource = map.getSource(sourceId);
+      if (existingSource) {
+        existingSource.setData(data);
       } else {
-        map.addSource(sourceId, {
-          type: 'geojson',
-          data: {
-            type: 'Feature',
-            geometry: { type: 'LineString', coordinates },
-            properties: {},
-          },
-        });
+        map.addSource(sourceId, { type: 'geojson', data });
       }
 
       const beforeGlow = map.getLayer('route-glow') ? 'route-glow' : undefined;
       const beforeLine = map.getLayer('route-line') ? 'route-line' : undefined;
 
-      if (!map.getLayer(glowLayerId)) {
+      if (map.getLayer(glowLayerId)) {
+        // The colour is keyed off position in the plan, so it can shift when the
+        // day count changes even though the day number is unchanged.
+        map.setPaintProperty(glowLayerId, 'line-color', color);
+      } else {
         map.addLayer(
           {
             id: glowLayerId,
@@ -672,7 +694,9 @@ export function updateMapDayPlan(map, trackPoints, dayPlan) {
         );
       }
 
-      if (!map.getLayer(lineLayerId)) {
+      if (map.getLayer(lineLayerId)) {
+        map.setPaintProperty(lineLayerId, 'line-color', color);
+      } else {
         map.addLayer(
           {
             id: lineLayerId,
@@ -688,7 +712,16 @@ export function updateMapDayPlan(map, trackPoints, dayPlan) {
           beforeLine,
         );
       }
+
+      renderedDays.push(d.day);
     });
+
+    // Drop only the days that are no longer part of the plan.
+    const stillRendered = new Set(renderedDays);
+    for (const day of previousDays) {
+      if (!stillRendered.has(day)) removeDayLayers(map, day);
+    }
+    dayLayersMap.set(map, renderedDays);
   }
 
   // --- 2. Update Day Boundary Labels ---
