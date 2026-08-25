@@ -108,63 +108,63 @@ const TYPE_BADGE = {
 function renderControls(o) {
   return `
     <div class="plan-controls" id="plan-controls">
-      <label class="plan-field" for="plan-daily">
+      <label class="plan-field">
         <span class="plan-field__label">Daily target</span>
         <span class="plan-field__inputwrap">
           <input class="plan-input" type="number" id="plan-daily" min="5" step="5"
             value="${o.targetDailyMiles}" /> <span class="plan-field__unit">mi</span>
         </span>
       </label>
-      <label class="plan-field" for="plan-capacity">
+      <label class="plan-field">
         <span class="plan-field__label">Water capacity</span>
         <span class="plan-field__inputwrap">
           <input class="plan-input" type="number" id="plan-capacity" min="16" step="8"
             value="${o.waterCapacityOz}" /> <span class="plan-field__unit">oz</span>
         </span>
       </label>
-      <label class="plan-field" for="plan-ozmile">
+      <label class="plan-field">
         <span class="plan-field__label">Use rate</span>
         <span class="plan-field__inputwrap">
           <input class="plan-input" type="number" id="plan-ozmile" min="1" step="1"
             value="${o.ozPerMile}" /> <span class="plan-field__unit">oz/mi</span>
         </span>
       </label>
-      <label class="plan-field" for="plan-reliability">
+      <label class="plan-field">
         <span class="plan-field__label">Reliable water ≥</span>
         <span class="plan-field__inputwrap">
           <input class="plan-input" type="number" id="plan-reliability" min="0" max="100" step="5"
             value="${o.reliableWaterThreshold}" /> <span class="plan-field__unit">%</span>
         </span>
       </label>
-      <label class="plan-field" for="plan-calories">
+      <label class="plan-field">
         <span class="plan-field__label">Calorie target</span>
         <span class="plan-field__inputwrap">
           <input class="plan-input" type="number" id="plan-calories" min="1000" max="10000" step="100"
             value="${o.caloriesPerDay}" /> <span class="plan-field__unit">kcal/day</span>
         </span>
       </label>
-      <label class="plan-field" for="plan-campmeals">
+      <label class="plan-field">
         <span class="plan-field__label">Camp meals/day</span>
         <span class="plan-field__inputwrap">
           <input class="plan-input" type="number" id="plan-campmeals" min="0" max="5" step="1"
             value="${o.campMealsPerDay}" /> <span class="plan-field__unit">meals</span>
         </span>
       </label>
-      <label class="plan-field" for="plan-campcal">
+      <label class="plan-field">
         <span class="plan-field__label">Camp meal cal</span>
         <span class="plan-field__inputwrap">
           <input class="plan-input" type="number" id="plan-campcal" min="200" max="2000" step="50"
             value="${o.caloriesPerCampMeal}" /> <span class="plan-field__unit">kcal</span>
         </span>
       </label>
-      <label class="plan-field" for="plan-snackcal">
+      <label class="plan-field">
         <span class="plan-field__label">Avg snack cal</span>
         <span class="plan-field__inputwrap">
           <input class="plan-input" type="number" id="plan-snackcal" min="50" max="1000" step="10"
             value="${o.avgSnackCalories}" /> <span class="plan-field__unit">kcal</span>
         </span>
       </label>
-      <label class="plan-field" for="plan-surface-factor" style="grid-column: span 2;">
+      <label class="plan-field" style="grid-column: span 2;">
         <span class="plan-field__label">Terrain Surface Type</span>
         <span class="plan-field__inputwrap">
           <select class="plan-input" id="plan-surface-factor" style="padding: 4px 8px; font-size: 12px; height: 32px; width: 100%; border-radius: 4px;">
@@ -175,7 +175,7 @@ function renderControls(o) {
           </select>
         </span>
       </label>
-      <label class="plan-field" for="plan-detour" style="grid-column: span 2;">
+      <label class="plan-field" style="grid-column: span 2;">
         <span class="plan-field__label">Max detour distance (exclude stops further off-route unless necessary)</span>
         <span class="plan-field__inputwrap">
           <input class="plan-input" type="number" id="plan-detour" min="0.1" max="25" step="0.1"
@@ -814,6 +814,37 @@ function repaint(root) {
 }
 
 /**
+ * Clamps a value to the min/max an input declares. The markup is the single
+ * source of truth for these bounds — duplicating them here is what let the old
+ * reader disagree with the field it was reading.
+ * @param {HTMLInputElement} el
+ * @param {number} value
+ * @returns {number}
+ */
+function clampToBounds(el, value) {
+  const min = Number.parseFloat(el.getAttribute('min'));
+  const max = Number.parseFloat(el.getAttribute('max'));
+  let out = value;
+  if (Number.isFinite(min)) out = Math.max(min, out);
+  if (Number.isFinite(max)) out = Math.min(max, out);
+  return out;
+}
+
+/**
+ * Rewrites a committed number input to its declared bounds, so the field never
+ * displays a value the plan is not actually using. Runs on 'change' — commit,
+ * blur or spinner — never on 'input', so it cannot fight a half-typed number.
+ * @param {EventTarget | null} el
+ */
+function normalizeInputValue(el) {
+  if (!el || el.tagName !== 'INPUT' || el.type !== 'number') return;
+  const raw = Number.parseFloat(el.value);
+  if (!Number.isFinite(raw)) return;
+  const clamped = clampToBounds(el, raw);
+  if (clamped !== raw) el.value = String(clamped);
+}
+
+/**
  * Delay between the last control edit and the plan recompute. A full recompute
  * is expensive on an OSM-enriched route, so this coalesces keystrokes and
  * spinner auto-repeat into a single rebuild.
@@ -832,9 +863,18 @@ let isSyncing = false;
  */
 function syncOptionsAndRepaint(root) {
   if (isSyncing) return;
-  const read = (id, fallback, minVal = 0) => {
-    const v = Number.parseFloat(root.querySelector(id)?.value);
-    return Number.isFinite(v) && v > minVal ? v : fallback;
+  /**
+   * Reads a numeric control, clamped to the bounds its markup declares. Falls
+   * back to the plan default only when the field holds no usable number — empty,
+   * or mid-edit. Previously this kept its own copy of a couple of the bounds and
+   * enforced them exclusively, so `5.1` passed a `min="5"` daily target and
+   * `10.5` passed a `min="16"` capacity, while `max` was ignored entirely.
+   */
+  const read = (id, fallback) => {
+    const el = root.querySelector(id);
+    const raw = Number.parseFloat(el?.value);
+    if (!Number.isFinite(raw)) return fallback;
+    return clampToBounds(el, raw);
   };
 
   const surfaceFactorVal = Number.parseFloat(root.querySelector('#plan-surface-factor')?.value);
@@ -850,8 +890,8 @@ function syncOptionsAndRepaint(root) {
 
   planOptions = {
     ...planOptions,
-    targetDailyMiles: read('#plan-daily', PLAN_DEFAULTS.targetDailyMiles, 5),
-    waterCapacityOz: read('#plan-capacity', PLAN_DEFAULTS.waterCapacityOz, 10),
+    targetDailyMiles: read('#plan-daily', PLAN_DEFAULTS.targetDailyMiles),
+    waterCapacityOz: read('#plan-capacity', PLAN_DEFAULTS.waterCapacityOz),
     ozPerMile: read('#plan-ozmile', PLAN_DEFAULTS.ozPerMile),
     reliableWaterThreshold: read('#plan-reliability', PLAN_DEFAULTS.reliableWaterThreshold),
     caloriesPerDay: read('#plan-calories', PLAN_DEFAULTS.caloriesPerDay),
@@ -1021,8 +1061,15 @@ export function renderPlanningView(root, route, options = null) {
       const detailsEl = root.querySelector('#plan-optimize-details');
       if (detailsEl) detailsEl.style.display = e.target.checked ? 'flex' : 'none';
     }
+    normalizeInputValue(e.target);
     scheduleSync();
   });
+  // Widens the click target to the whole field. Note that a label wrapping its
+  // own input delivers TWO click events here for one gesture — the real one, and
+  // the activation click the browser forwards to the input. That is inherent to
+  // label-wrapped inputs, not a bug in the markup: dropping the (redundant) for=
+  // attribute does not change it, because the implicit association forwards too.
+  // Skipping when the target is the input itself makes the pair idempotent.
   controls.addEventListener('click', (e) => {
     const field = e.target.closest('.plan-field');
     if (field) {
@@ -1111,7 +1158,30 @@ export function renderPlanningView(root, route, options = null) {
     });
   }
 
-  // Delegated event listener for interactive stop state toggling & camp selection
+  // Delegated event listener for interactive stop state toggling & camp selection.
+  //
+  // renderPlanningView runs again on every route load, but `root` survives —
+  // only its innerHTML is replaced — so this must be attached exactly once.
+  // Re-attaching made a single click advance the stop state once per route the
+  // rider had loaded, which after three loads cycled optional -> planned ->
+  // skipped -> optional and left the button looking dead.
+  if (!delegatedRoots.has(root)) {
+    delegatedRoots.add(root);
+    wireDelegatedClicks(root);
+  }
+
+  repaint(root);
+}
+
+/** Roots that already carry the delegated click handler. */
+const delegatedRoots = new WeakSet();
+
+/**
+ * Attaches the one-per-root delegated click handler for stop toggles, day camp
+ * selection and the segment drawer.
+ * @param {HTMLElement} root
+ */
+function wireDelegatedClicks(root) {
   root.addEventListener('click', (e) => {
     const toggleBtn = e.target.closest('[data-action="toggle-stop"]');
     if (toggleBtn) {
@@ -1164,8 +1234,6 @@ export function renderPlanningView(root, route, options = null) {
       return;
     }
   });
-
-  repaint(root);
 }
 
 /**
