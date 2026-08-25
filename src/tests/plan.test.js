@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { calculateElevation } from '../gpx.js';
 import {
   buildDayPlan,
   buildPlan,
@@ -33,6 +34,20 @@ function makeRoute(extra = {}) {
     ],
     ...extra,
   };
+}
+
+/**
+ * A ~40 mi route with a repeating climb/descent profile, so elevation gain
+ * accumulates across the whole length rather than at a single spike.
+ * @returns {import('../gpx.js').RouteContext}
+ */
+function makeElevationRoute() {
+  const trackPoints = [];
+  for (let i = 0; i <= 80; i++) {
+    const ele = 1000 + (i % 8) * 40; // repeating 320 m climb/drop cycle
+    trackPoints.push([35.0 + i * 0.0072, -111.0, ele]);
+  }
+  return { name: 'Elevation Route', totalDistanceMiles: 40, trackPoints, waypoints: [] };
 }
 
 describe('computeWaterCarry', () => {
@@ -126,6 +141,48 @@ describe('computeWaterDemand', () => {
 
     expect(flatDemand).toBe(50);
     expect(hillyDemand).toBeGreaterThan(flatDemand);
+  });
+
+  it('derives climb from the same elevation source the day cards report', () => {
+    // computeWaterDemand reads cumulative-gain prefix sums via calculateElevation
+    // rather than re-walking the segment, so the climb it charges for must match
+    // the gain shown alongside it in the plan.
+    const route = makeElevationRoute();
+    const { gainFt } = calculateElevation(route.trackPoints, 0, 20);
+    const expectedClimbOz = (gainFt / 1000) * (5 * 0.6);
+    const demand = computeWaterDemand(route, 0, 20, { ozPerMile: 5 });
+    expect(demand).toBe(Math.ceil(20 * 5 + expectedClimbOz));
+  });
+
+  it('is additive across adjacent stretches, within rounding', () => {
+    const route = makeElevationRoute();
+    const whole = computeWaterDemand(route, 0, 40, { ozPerMile: 5 });
+    const first = computeWaterDemand(route, 0, 20, { ozPerMile: 5 });
+    const second = computeWaterDemand(route, 20, 40, { ozPerMile: 5 });
+    expect(Math.abs(first + second - whole)).toBeLessThanOrEqual(2);
+  });
+
+  it('grows monotonically as the stretch lengthens', () => {
+    const route = makeElevationRoute();
+    let previous = 0;
+    for (const toMi of [5, 10, 20, 30, 40]) {
+      const demand = computeWaterDemand(route, 0, toMi, { ozPerMile: 5 });
+      expect(demand).toBeGreaterThan(previous);
+      previous = demand;
+    }
+  });
+
+  it('returns zero for a negligible stretch', () => {
+    const route = makeElevationRoute();
+    expect(computeWaterDemand(route, 10, 10, { ozPerMile: 5 })).toBe(0);
+    expect(computeWaterDemand(route, 10, 9, { ozPerMile: 5 })).toBe(0);
+  });
+
+  it('survives a route with no usable track points', () => {
+    expect(computeWaterDemand({ totalDistanceMiles: 10, trackPoints: [] }, 0, 10, {
+      ozPerMile: 5,
+    })).toBe(50);
+    expect(computeWaterDemand({ totalDistanceMiles: 10 }, 0, 10, { ozPerMile: 5 })).toBe(50);
   });
 });
 

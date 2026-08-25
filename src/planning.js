@@ -814,10 +814,24 @@ function repaint(root) {
 }
 
 /**
+ * Delay between the last control edit and the plan recompute. A full recompute
+ * is expensive on an OSM-enriched route, so this coalesces keystrokes and
+ * spinner auto-repeat into a single rebuild.
+ */
+const SYNC_DEBOUNCE_MS = 300;
+
+/** @type {ReturnType<typeof setTimeout> | null} Pending debounced sync. */
+let syncDebounceTimer = null;
+
+/** Guards against a sync re-entering itself via an event fired during repaint. */
+let isSyncing = false;
+
+/**
  * Reads the control inputs into planOptions and repaints.
  * @param {HTMLElement} root
  */
 function syncOptionsAndRepaint(root) {
+  if (isSyncing) return;
   const read = (id, fallback, minVal = 0) => {
     const v = Number.parseFloat(root.querySelector(id)?.value);
     return Number.isFinite(v) && v > minVal ? v : fallback;
@@ -856,15 +870,20 @@ function syncOptionsAndRepaint(root) {
     stopOverheadMinutes: read('#plan-stop-overhead', PLAN_DEFAULTS.stopOverheadMinutes),
     waterWeightPenalty: read('#plan-weight-penalty', PLAN_DEFAULTS.waterWeightPenalty),
   };
-  repaint(root);
+  isSyncing = true;
+  try {
+    repaint(root);
 
-  // Dispatch event to app.js so it can update its state and map
-  root.dispatchEvent(
-    new CustomEvent('plan-options-change', {
-      detail: planOptions,
-      bubbles: true,
-    }),
-  );
+    // Dispatch event to app.js so it can update its state and map
+    root.dispatchEvent(
+      new CustomEvent('plan-options-change', {
+        detail: planOptions,
+        bubbles: true,
+      }),
+    );
+  } finally {
+    isSyncing = false;
+  }
 }
 
 /**
@@ -981,13 +1000,29 @@ export function renderPlanningView(root, route, options = null) {
   `;
 
   const controls = root.querySelector('#plan-controls');
-  let debounceTimer = null;
-  const debouncedSync = () => {
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => syncOptionsAndRepaint(root), 250);
+
+  // Both 'input' and 'change' go through one shared timer. A number input fires
+  // *both* for a single spinner-arrow click, and holding the arrow auto-repeats;
+  // running the recompute on 'change' directly meant one press could queue dozens
+  // of full plan rebuilds back to back and wedge the main thread.
+  if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
+  syncDebounceTimer = null;
+  const scheduleSync = () => {
+    if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
+    syncDebounceTimer = setTimeout(() => {
+      syncDebounceTimer = null;
+      syncOptionsAndRepaint(root);
+    }, SYNC_DEBOUNCE_MS);
   };
-  controls.addEventListener('input', debouncedSync);
-  controls.addEventListener('change', () => syncOptionsAndRepaint(root));
+  controls.addEventListener('input', scheduleSync);
+  controls.addEventListener('change', (e) => {
+    // Cheap, purely visual state stays instant; only the recompute is deferred.
+    if (e.target?.id === 'plan-optimize-water') {
+      const detailsEl = root.querySelector('#plan-optimize-details');
+      if (detailsEl) detailsEl.style.display = e.target.checked ? 'flex' : 'none';
+    }
+    scheduleSync();
+  });
   controls.addEventListener('click', (e) => {
     const field = e.target.closest('.plan-field');
     if (field) {
