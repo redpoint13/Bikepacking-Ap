@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { calculateElevation } from '../gpx.js';
 import {
   buildDayPlan,
@@ -8,6 +8,7 @@ import {
   computeWaterDemand,
   optimizeWaterStops,
 } from '../plan.js';
+import { renderPlanningView } from '../planning.js';
 
 /** @returns {import('../gpx.js').RouteContext} */
 function makeRoute(extra = {}) {
@@ -366,5 +367,141 @@ describe('Water Optimizer and Manual Overrides', () => {
     const restaurantSpan = spans.find((s) => s.toMi === 60);
     expect(restaurantSpan.toCategory).toBe('restaurant');
     expect(restaurantSpan.toCategoryLabel).toBe('Restaurant / Diner');
+  });
+});
+
+describe('Planning View Controls & Variable Inputs', () => {
+  it('renders input fields with accessible labels and stepper buttons', () => {
+    localStorage.clear();
+    const root = document.createElement('div');
+    const route = makeRoute();
+    renderPlanningView(root, route);
+
+    const waterCapInput = root.querySelector('#plan-capacity');
+    expect(waterCapInput).toBeTruthy();
+    expect(waterCapInput.value).toBe('100');
+
+    const dailyInput = root.querySelector('#plan-daily');
+    expect(dailyInput).toBeTruthy();
+    expect(dailyInput.value).toBe('45');
+
+    const waterLabel = root.querySelector('label[for="plan-capacity"]');
+    expect(waterLabel).toBeTruthy();
+    expect(waterLabel.textContent).toContain('Water capacity');
+
+    const plusBtn = root.querySelector(
+      '.plan-step-btn[data-target="plan-capacity"][data-step="8"]',
+    );
+    const minusBtn = root.querySelector(
+      '.plan-step-btn[data-target="plan-capacity"][data-step="-8"]',
+    );
+    expect(plusBtn).toBeTruthy();
+    expect(minusBtn).toBeTruthy();
+  });
+
+  it('allows clicking the + stepper button to increment water capacity', () => {
+    localStorage.clear();
+    const root = document.createElement('div');
+    const route = makeRoute();
+    renderPlanningView(root, route);
+
+    let dispatchedOptions = null;
+    root.addEventListener('plan-options-change', (e) => {
+      dispatchedOptions = e.detail;
+    });
+
+    const plusBtn = root.querySelector(
+      '.plan-step-btn[data-target="plan-capacity"][data-step="8"]',
+    );
+    plusBtn.click();
+
+    const waterCapInput = root.querySelector('#plan-capacity');
+    expect(waterCapInput.value).toBe('108');
+    expect(dispatchedOptions).toBeTruthy();
+    expect(dispatchedOptions.waterCapacityOz).toBe(108);
+    expect(localStorage.getItem('bpnav-waterCapacityOz')).toBe('108');
+  });
+
+  it('allows clicking the − stepper button to decrement water capacity', () => {
+    localStorage.clear();
+    const root = document.createElement('div');
+    const route = makeRoute();
+    renderPlanningView(root, route);
+
+    const minusBtn = root.querySelector(
+      '.plan-step-btn[data-target="plan-capacity"][data-step="-8"]',
+    );
+    minusBtn.click();
+
+    const waterCapInput = root.querySelector('#plan-capacity');
+    expect(waterCapInput.value).toBe('92');
+    expect(localStorage.getItem('bpnav-waterCapacityOz')).toBe('92');
+  });
+
+  it('allows typing a new value into the water capacity input', () => {
+    // Typed edits are coalesced behind SYNC_DEBOUNCE_MS so a burst of keystrokes
+    // is one recompute, so the dispatch lands on the timer, not on the event.
+    // The stepper buttons above are a discrete gesture and stay synchronous.
+    vi.useFakeTimers();
+    try {
+      localStorage.clear();
+      const root = document.createElement('div');
+      const route = makeRoute();
+      renderPlanningView(root, route);
+
+      let dispatchedOptions = null;
+      root.addEventListener('plan-options-change', (e) => {
+        dispatchedOptions = e.detail;
+      });
+
+      const waterCapInput = root.querySelector('#plan-capacity');
+      waterCapInput.value = '128';
+      waterCapInput.dispatchEvent(new Event('change', { bubbles: true }));
+      vi.advanceTimersByTime(1000);
+
+      expect(dispatchedOptions).toBeTruthy();
+      expect(dispatchedOptions.waterCapacityOz).toBe(128);
+      expect(localStorage.getItem('bpnav-waterCapacityOz')).toBe('128');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('respects min bound on stepper decrement', () => {
+    localStorage.clear();
+    const root = document.createElement('div');
+    const route = makeRoute();
+    renderPlanningView(root, route);
+
+    const waterCapInput = root.querySelector('#plan-capacity');
+    waterCapInput.value = '20';
+    waterCapInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+    const minusBtn = root.querySelector(
+      '.plan-step-btn[data-target="plan-capacity"][data-step="-8"]',
+    );
+    minusBtn.click();
+
+    // min is 16
+    expect(waterCapInput.value).toBe('16');
+  });
+
+  it('updates daily target and terrain surface type correctly', () => {
+    localStorage.clear();
+    const root = document.createElement('div');
+    const route = makeRoute();
+    renderPlanningView(root, route);
+
+    const dailyPlus = root.querySelector('.plan-step-btn[data-target="plan-daily"][data-step="5"]');
+    dailyPlus.click();
+
+    const dailyInput = root.querySelector('#plan-daily');
+    expect(dailyInput.value).toBe('50');
+
+    const surfaceSelect = root.querySelector('#plan-surface-factor');
+    surfaceSelect.value = '1.6';
+    surfaceSelect.dispatchEvent(new Event('change', { bubbles: true }));
+
+    expect(localStorage.getItem('bpnav-targetDailyMiles')).toBe('50');
   });
 });

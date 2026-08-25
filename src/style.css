@@ -1147,8 +1147,9 @@ svg {
   background-color: var(--md-sys-color-surface-container-high);
   border: 1px solid var(--md-sys-color-outline-variant);
   border-radius: var(--md-sys-shape-corner-small);
-  padding: 0 var(--spacing-sm);
+  padding: 0 6px;
   height: 40px;
+  gap: 4px;
   cursor: text;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
@@ -1156,6 +1157,36 @@ svg {
 .plan-field__inputwrap:focus-within {
   border-color: var(--md-sys-color-primary);
   box-shadow: 0 0 0 2px rgba(120, 220, 149, 0.2);
+}
+
+.plan-step-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: var(--md-sys-color-surface-container, #1e2022);
+  border: 1px solid var(--md-sys-color-outline-variant, #46444a);
+  border-radius: var(--md-sys-shape-corner-small, 4px);
+  color: var(--md-sys-color-on-surface, #ffffff);
+  font-family: var(--md-sys-typescale-font);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  user-select: none;
+  transition: background-color 0.15s ease, color 0.15s ease, transform 0.05s ease;
+  flex-shrink: 0;
+}
+
+.plan-step-btn:hover {
+  background-color: var(--md-sys-color-primary, #78dc95);
+  color: var(--md-sys-color-on-primary, #00391c);
+  border-color: var(--md-sys-color-primary, #78dc95);
+}
+
+.plan-step-btn:active {
+  transform: scale(0.92);
 }
 
 .plan-input {
@@ -1170,8 +1201,8 @@ svg {
   width: 100%;
   height: 100%;
   min-height: 38px;
-  text-align: right;
-  padding: 0 4px;
+  text-align: center;
+  padding: 0 2px;
   cursor: text;
   box-sizing: border-box;
 }

@@ -56,31 +56,13 @@ function mapPanLink(name, mi) {
 }
 
 import { describeError } from './errorBoundary.js';
+import { getPlanDefaults, persistUserPreferences } from './state.js';
 import { buildResourceLog } from './triplog.js';
 import { setHTML } from './utils/dom.js';
 
 // ---------------------------------------------------------------------------
 // Module state — current planning parameters (persist across re-renders)
 // ---------------------------------------------------------------------------
-
-function getPlanDefaults() {
-  const defaults = { ...PLAN_DEFAULTS };
-
-  const targetDailyMiles = localStorage.getItem('bpnav-targetDailyMiles');
-  if (targetDailyMiles !== null) defaults.targetDailyMiles = Number(targetDailyMiles);
-
-  const waterCapacityOz = localStorage.getItem('bpnav-waterCapacityOz');
-  if (waterCapacityOz !== null) defaults.waterCapacityOz = Number(waterCapacityOz);
-
-  const ozPerMile = localStorage.getItem('bpnav-ozPerMile');
-  if (ozPerMile !== null) defaults.ozPerMile = Number(ozPerMile);
-
-  const reliableWaterThreshold = localStorage.getItem('bpnav-reliableWaterThreshold');
-  if (reliableWaterThreshold !== null)
-    defaults.reliableWaterThreshold = Number(reliableWaterThreshold);
-
-  return defaults;
-}
 
 /** @type {typeof PLAN_DEFAULTS} */
 let planOptions = getPlanDefaults();
@@ -108,107 +90,143 @@ const TYPE_BADGE = {
 function renderControls(o) {
   return `
     <div class="plan-controls" id="plan-controls">
-      <label class="plan-field">
-        <span class="plan-field__label">Daily target</span>
-        <span class="plan-field__inputwrap">
-          <input class="plan-input" type="number" id="plan-daily" min="5" step="5"
-            value="${o.targetDailyMiles}" /> <span class="plan-field__unit">mi</span>
-        </span>
-      </label>
-      <label class="plan-field">
-        <span class="plan-field__label">Water capacity</span>
-        <span class="plan-field__inputwrap">
-          <input class="plan-input" type="number" id="plan-capacity" min="16" step="8"
-            value="${o.waterCapacityOz}" /> <span class="plan-field__unit">oz</span>
-        </span>
-      </label>
-      <label class="plan-field">
-        <span class="plan-field__label">Use rate</span>
-        <span class="plan-field__inputwrap">
-          <input class="plan-input" type="number" id="plan-ozmile" min="1" step="1"
-            value="${o.ozPerMile}" /> <span class="plan-field__unit">oz/mi</span>
-        </span>
-      </label>
-      <label class="plan-field">
-        <span class="plan-field__label">Reliable water ≥</span>
-        <span class="plan-field__inputwrap">
+      <div class="plan-field">
+        <label class="plan-field__label" for="plan-daily">Daily target</label>
+        <div class="plan-field__inputwrap">
+          <button type="button" class="plan-step-btn" data-target="plan-daily" data-step="-5" aria-label="Decrease daily target">−</button>
+          <input class="plan-input" type="number" id="plan-daily" min="5" max="200" step="5"
+            value="${o.targetDailyMiles}" />
+          <button type="button" class="plan-step-btn" data-target="plan-daily" data-step="5" aria-label="Increase daily target">+</button>
+          <span class="plan-field__unit">mi</span>
+        </div>
+      </div>
+      <div class="plan-field">
+        <label class="plan-field__label" for="plan-capacity">Water capacity</label>
+        <div class="plan-field__inputwrap">
+          <button type="button" class="plan-step-btn" data-target="plan-capacity" data-step="-8" aria-label="Decrease water capacity">−</button>
+          <input class="plan-input" type="number" id="plan-capacity" min="16" max="400" step="8"
+            value="${o.waterCapacityOz}" />
+          <button type="button" class="plan-step-btn" data-target="plan-capacity" data-step="8" aria-label="Increase water capacity">+</button>
+          <span class="plan-field__unit">oz</span>
+        </div>
+      </div>
+      <div class="plan-field">
+        <label class="plan-field__label" for="plan-ozmile">Use rate</label>
+        <div class="plan-field__inputwrap">
+          <button type="button" class="plan-step-btn" data-target="plan-ozmile" data-step="-1" aria-label="Decrease use rate">−</button>
+          <input class="plan-input" type="number" id="plan-ozmile" min="1" max="20" step="1"
+            value="${o.ozPerMile}" />
+          <button type="button" class="plan-step-btn" data-target="plan-ozmile" data-step="1" aria-label="Increase use rate">+</button>
+          <span class="plan-field__unit">oz/mi</span>
+        </div>
+      </div>
+      <div class="plan-field">
+        <label class="plan-field__label" for="plan-reliability">Reliable water ≥</label>
+        <div class="plan-field__inputwrap">
+          <button type="button" class="plan-step-btn" data-target="plan-reliability" data-step="-5" aria-label="Decrease reliability threshold">−</button>
           <input class="plan-input" type="number" id="plan-reliability" min="0" max="100" step="5"
-            value="${o.reliableWaterThreshold}" /> <span class="plan-field__unit">%</span>
-        </span>
-      </label>
-      <label class="plan-field">
-        <span class="plan-field__label">Calorie target</span>
-        <span class="plan-field__inputwrap">
+            value="${o.reliableWaterThreshold}" />
+          <button type="button" class="plan-step-btn" data-target="plan-reliability" data-step="5" aria-label="Increase reliability threshold">+</button>
+          <span class="plan-field__unit">%</span>
+        </div>
+      </div>
+      <div class="plan-field">
+        <label class="plan-field__label" for="plan-calories">Calorie target</label>
+        <div class="plan-field__inputwrap">
+          <button type="button" class="plan-step-btn" data-target="plan-calories" data-step="-100" aria-label="Decrease calorie target">−</button>
           <input class="plan-input" type="number" id="plan-calories" min="1000" max="10000" step="100"
-            value="${o.caloriesPerDay}" /> <span class="plan-field__unit">kcal/day</span>
-        </span>
-      </label>
-      <label class="plan-field">
-        <span class="plan-field__label">Camp meals/day</span>
-        <span class="plan-field__inputwrap">
+            value="${o.caloriesPerDay}" />
+          <button type="button" class="plan-step-btn" data-target="plan-calories" data-step="100" aria-label="Increase calorie target">+</button>
+          <span class="plan-field__unit">kcal/day</span>
+        </div>
+      </div>
+      <div class="plan-field">
+        <label class="plan-field__label" for="plan-campmeals">Camp meals/day</label>
+        <div class="plan-field__inputwrap">
+          <button type="button" class="plan-step-btn" data-target="plan-campmeals" data-step="-1" aria-label="Decrease camp meals per day">−</button>
           <input class="plan-input" type="number" id="plan-campmeals" min="0" max="5" step="1"
-            value="${o.campMealsPerDay}" /> <span class="plan-field__unit">meals</span>
-        </span>
-      </label>
-      <label class="plan-field">
-        <span class="plan-field__label">Camp meal cal</span>
-        <span class="plan-field__inputwrap">
+            value="${o.campMealsPerDay}" />
+          <button type="button" class="plan-step-btn" data-target="plan-campmeals" data-step="1" aria-label="Increase camp meals per day">+</button>
+          <span class="plan-field__unit">meals</span>
+        </div>
+      </div>
+      <div class="plan-field">
+        <label class="plan-field__label" for="plan-campcal">Camp meal cal</label>
+        <div class="plan-field__inputwrap">
+          <button type="button" class="plan-step-btn" data-target="plan-campcal" data-step="-50" aria-label="Decrease camp meal calories">−</button>
           <input class="plan-input" type="number" id="plan-campcal" min="200" max="2000" step="50"
-            value="${o.caloriesPerCampMeal}" /> <span class="plan-field__unit">kcal</span>
-        </span>
-      </label>
-      <label class="plan-field">
-        <span class="plan-field__label">Avg snack cal</span>
-        <span class="plan-field__inputwrap">
+            value="${o.caloriesPerCampMeal}" />
+          <button type="button" class="plan-step-btn" data-target="plan-campcal" data-step="50" aria-label="Increase camp meal calories">+</button>
+          <span class="plan-field__unit">kcal</span>
+        </div>
+      </div>
+      <div class="plan-field">
+        <label class="plan-field__label" for="plan-snackcal">Avg snack cal</label>
+        <div class="plan-field__inputwrap">
+          <button type="button" class="plan-step-btn" data-target="plan-snackcal" data-step="-10" aria-label="Decrease snack calories">−</button>
           <input class="plan-input" type="number" id="plan-snackcal" min="50" max="1000" step="10"
-            value="${o.avgSnackCalories}" /> <span class="plan-field__unit">kcal</span>
-        </span>
-      </label>
-      <label class="plan-field" style="grid-column: span 2;">
-        <span class="plan-field__label">Terrain Surface Type</span>
-        <span class="plan-field__inputwrap">
+            value="${o.avgSnackCalories}" />
+          <button type="button" class="plan-step-btn" data-target="plan-snackcal" data-step="10" aria-label="Increase snack calories">+</button>
+          <span class="plan-field__unit">kcal</span>
+        </div>
+      </div>
+      <div class="plan-field" style="grid-column: span 2;">
+        <label class="plan-field__label" for="plan-surface-factor">Terrain Surface Type</label>
+        <div class="plan-field__inputwrap">
           <select class="plan-input" id="plan-surface-factor" style="padding: 4px 8px; font-size: 12px; height: 32px; width: 100%; border-radius: 4px;">
             <option value="1.0" ${o.surfaceFactor === 1.0 ? 'selected' : ''}>🛣️ Paved Road (1.0x)</option>
             <option value="1.2" ${o.surfaceFactor === 1.2 || !o.surfaceFactor ? 'selected' : ''}>🏔️ Gravel / Dirt Road (1.2x)</option>
             <option value="1.6" ${o.surfaceFactor === 1.6 ? 'selected' : ''}>🌲 Technical Singletrack (1.6x)</option>
             <option value="2.0" ${o.surfaceFactor === 2.0 ? 'selected' : ''}>🏜️ Rough / Sand / Rock (2.0x)</option>
           </select>
-        </span>
-      </label>
-      <label class="plan-field" style="grid-column: span 2;">
-        <span class="plan-field__label">Max detour distance (exclude stops further off-route unless necessary)</span>
-        <span class="plan-field__inputwrap">
+        </div>
+      </div>
+      <div class="plan-field" style="grid-column: span 2;">
+        <label class="plan-field__label" for="plan-detour">Max detour distance (exclude stops further off-route unless necessary)</label>
+        <div class="plan-field__inputwrap">
+          <button type="button" class="plan-step-btn" data-target="plan-detour" data-step="-0.5" aria-label="Decrease max detour distance">−</button>
           <input class="plan-input" type="number" id="plan-detour" min="0.1" max="25" step="0.1"
-            value="${o.maxDetourMi}" /> <span class="plan-field__unit">mi</span>
-        </span>
-      </label>
-      <label class="plan-field plan-field--checkbox" style="grid-column: span 2; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+            value="${o.maxDetourMi}" />
+          <button type="button" class="plan-step-btn" data-target="plan-detour" data-step="0.5" aria-label="Increase max detour distance">+</button>
+          <span class="plan-field__unit">mi</span>
+        </div>
+      </div>
+      <div class="plan-field plan-field--checkbox" style="grid-column: span 2; display: flex; align-items: center; gap: 8px; cursor: pointer;">
         <input class="plan-checkbox" type="checkbox" id="plan-optimize-water"
           ${o.optimizeWaterStops ? 'checked' : ''} />
-        <span class="plan-field__label" style="margin: 0; font-weight: 600;">Smart Water Refill Optimization (Skip intermediate sources)</span>
-      </label>
+        <label class="plan-field__label" for="plan-optimize-water" style="margin: 0; font-weight: 600; cursor: pointer;">Smart Water Refill Optimization (Skip intermediate sources)</label>
+      </div>
       <div class="plan-controls__sub" id="plan-optimize-details" style="grid-column: span 2; display: ${o.optimizeWaterStops ? 'flex' : 'none'}; flex-wrap: wrap; gap: 12px; width: 100%; border-top: 1px dashed var(--md-sys-color-outline-variant); padding-top: 12px; margin-top: 4px;">
-        <label class="plan-field" style="flex: 1 1 140px;">
-          <span class="plan-field__label">Target Refill Distance</span>
-          <span class="plan-field__inputwrap">
+        <div class="plan-field" style="flex: 1 1 140px;">
+          <label class="plan-field__label" for="plan-target-water-interval">Target Refill Distance</label>
+          <div class="plan-field__inputwrap">
+            <button type="button" class="plan-step-btn" data-target="plan-target-water-interval" data-step="-5" aria-label="Decrease target refill distance">−</button>
             <input class="plan-input" type="number" id="plan-target-water-interval" min="5" max="80" step="1"
-              value="${o.targetWaterIntervalMi ?? 20}" /> <span class="plan-field__unit">mi</span>
-          </span>
-        </label>
-        <label class="plan-field" style="flex: 1 1 140px;">
-          <span class="plan-field__label">Safety Reserve Margin</span>
-          <span class="plan-field__inputwrap">
+              value="${o.targetWaterIntervalMi ?? 20}" />
+            <button type="button" class="plan-step-btn" data-target="plan-target-water-interval" data-step="5" aria-label="Increase target refill distance">+</button>
+            <span class="plan-field__unit">mi</span>
+          </div>
+        </div>
+        <div class="plan-field" style="flex: 1 1 140px;">
+          <label class="plan-field__label" for="plan-water-safety-margin">Safety Reserve Margin</label>
+          <div class="plan-field__inputwrap">
+            <button type="button" class="plan-step-btn" data-target="plan-water-safety-margin" data-step="-5" aria-label="Decrease safety reserve margin">−</button>
             <input class="plan-input" type="number" id="plan-water-safety-margin" min="5" max="50" step="5"
-              value="${o.waterSafetyMarginPercent ?? 20}" /> <span class="plan-field__unit">%</span>
-          </span>
-        </label>
-        <label class="plan-field" style="flex: 1 1 140px;">
-          <span class="plan-field__label">Camp Water Reserve</span>
-          <span class="plan-field__inputwrap">
+              value="${o.waterSafetyMarginPercent ?? 20}" />
+            <button type="button" class="plan-step-btn" data-target="plan-water-safety-margin" data-step="5" aria-label="Increase safety reserve margin">+</button>
+            <span class="plan-field__unit">%</span>
+          </div>
+        </div>
+        <div class="plan-field" style="flex: 1 1 140px;">
+          <label class="plan-field__label" for="plan-camp-water-reserve">Camp Water Reserve</label>
+          <div class="plan-field__inputwrap">
+            <button type="button" class="plan-step-btn" data-target="plan-camp-water-reserve" data-step="-10" aria-label="Decrease camp water reserve">−</button>
             <input class="plan-input" type="number" id="plan-camp-water-reserve" min="0" max="150" step="10"
-              value="${o.campWaterReserveOz ?? 40}" /> <span class="plan-field__unit">oz</span>
-          </span>
-        </label>
+              value="${o.campWaterReserveOz ?? 40}" />
+            <button type="button" class="plan-step-btn" data-target="plan-camp-water-reserve" data-step="10" aria-label="Increase camp water reserve">+</button>
+            <span class="plan-field__unit">oz</span>
+          </div>
+        </div>
       </div>
       <div style="grid-column: span 2; display: flex; align-items: center; justify-content: space-between; gap: 8px; background: var(--md-sys-color-surface-container, #1a1c1e); padding: 10px 14px; border-radius: 8px; border: 1px solid var(--md-sys-color-outline-variant); margin-top: 4px;">
         <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 0;">
@@ -901,15 +919,23 @@ function syncOptionsAndRepaint(root) {
     maxDetourMi: read('#plan-detour', PLAN_DEFAULTS.maxDetourMi),
     surfaceFactor,
     optimizeWaterStops,
-    targetWaterIntervalMi: read('#plan-target-water-interval', PLAN_DEFAULTS.targetWaterIntervalMi),
+    targetWaterIntervalMi: read(
+      '#plan-target-water-interval',
+      PLAN_DEFAULTS.targetWaterIntervalMi,
+      5,
+      80,
+    ),
     waterSafetyMarginPercent: read(
       '#plan-water-safety-margin',
       PLAN_DEFAULTS.waterSafetyMarginPercent,
+      5,
+      50,
     ),
-    campWaterReserveOz: read('#plan-camp-water-reserve', PLAN_DEFAULTS.campWaterReserveOz),
-    stopOverheadMinutes: read('#plan-stop-overhead', PLAN_DEFAULTS.stopOverheadMinutes),
-    waterWeightPenalty: read('#plan-weight-penalty', PLAN_DEFAULTS.waterWeightPenalty),
+    campWaterReserveOz: read('#plan-camp-water-reserve', PLAN_DEFAULTS.campWaterReserveOz, 0, 150),
+    stopOverheadMinutes: read('#plan-stop-overhead', PLAN_DEFAULTS.stopOverheadMinutes, 0, 120),
+    waterWeightPenalty: read('#plan-weight-penalty', PLAN_DEFAULTS.waterWeightPenalty, 0, 10),
   };
+  persistUserPreferences(planOptions);
   isSyncing = true;
   try {
     repaint(root);
@@ -935,7 +961,7 @@ function syncOptionsAndRepaint(root) {
  * @param {typeof PLAN_DEFAULTS} [options=null]
  */
 export function renderPlanningView(root, route, options = null) {
-  if (options) planOptions = options;
+  planOptions = options ? { ...options } : getPlanDefaults();
   planRoute = route;
   root.innerHTML = `
     <section class="plan-section" aria-label="Trip planner">
@@ -1091,13 +1117,28 @@ export function renderPlanningView(root, route, options = null) {
   });
 
   // Widens the click target to the whole field, for the label text and the wrap
-  // padding either side of the input. Note that a label wrapping its own input
-  // delivers TWO click events here for one gesture — the real one, and the
-  // activation click the browser forwards to the input. That is inherent to
-  // label-wrapped inputs, not a bug in the markup: dropping the (redundant) for=
-  // attribute does not change it, because the implicit association forwards too.
-  // Skipping when the target is the input itself makes the pair idempotent.
+  // padding either side of the input. The stepper buttons are why .plan-field is
+  // a div with an explicit label[for] rather than a label wrapping its input: a
+  // wrapping label forwards an activation click to the input, so a <button>
+  // inside one fires the step AND retargets the click. Handle the steppers first
+  // and return, so the focus delegation below never sees them. Skipping when the
+  // target is the input itself keeps the remaining pair idempotent.
   controls.addEventListener('click', (e) => {
+    const stepBtn = e.target.closest('.plan-step-btn');
+    if (stepBtn) {
+      e.preventDefault();
+      const targetId = stepBtn.getAttribute('data-target');
+      const stepVal = Number.parseFloat(stepBtn.getAttribute('data-step'));
+      const input = root.querySelector(`#${targetId}`);
+      if (input && Number.isFinite(stepVal)) {
+        const current = Number.parseFloat(input.value) || 0;
+        // Same bounds source as syncOptionsAndRepaint: the element's own min/max.
+        input.value = clampToBounds(input, Math.round((current + stepVal) * 10) / 10);
+        syncOptionsAndRepaint(root);
+      }
+      return;
+    }
+
     const field = e.target.closest('.plan-field');
     if (field) {
       const input = field.querySelector('.plan-input');
@@ -1105,6 +1146,13 @@ export function renderPlanningView(root, route, options = null) {
         // focusin does the selecting; this only needs to move focus.
         input.focus();
       }
+      return;
+    }
+
+    const inputWrap = e.target.closest('.plan-field__inputwrap');
+    if (inputWrap && e.target === inputWrap) {
+      const input = inputWrap.querySelector('.plan-input');
+      if (input) input.focus();
     }
   });
 
