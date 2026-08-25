@@ -11,6 +11,7 @@
  * @module water
  */
 
+import { ENRICHMENT_LIMITS, capEnrichedWaypoints } from './enrichmentLimits.js';
 import { describeError } from './errorBoundary.js';
 import { distanceFromStart, fetchOverpass, haversineDistance } from './gpx.js';
 
@@ -319,7 +320,7 @@ export function mergeWaterSources(
     });
   }
 
-  return merged.sort((a, b) => a.distanceFromStartMi - b.distanceFromStartMi);
+  return capEnrichedWaypoints(merged, ENRICHMENT_LIMITS.water);
 }
 
 export async function fetchUSGSFlowData(siteIds) {

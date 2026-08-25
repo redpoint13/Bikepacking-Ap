@@ -161,13 +161,14 @@ export function computeWaterDemand(route, fromMi, toMi, opts = {}) {
   const miles = Math.max(0, toMi - fromMi);
   if (miles <= 0.01) return 0;
 
+  // calculateElevation answers this from cached cumulative-distance/gain prefix
+  // sums in O(log n). The previous route through calculateSegmentDifficulty
+  // sliced and walked the whole stretch just to read gainFt, which the water
+  // optimizer calls a quadratic number of times.
   let gainFt = 0;
   if (route?.trackPoints && route.trackPoints.length >= 2) {
     try {
-      const diff = calculateSegmentDifficulty(route.trackPoints, fromMi, toMi, {
-        surfaceFactor: opts.surfaceFactor ?? 1.2,
-      });
-      gainFt = diff?.gainFt || 0;
+      gainFt = calculateElevation(route.trackPoints, fromMi, toMi).gainFt || 0;
     } catch {
       gainFt = 0;
     }
@@ -960,6 +961,68 @@ export function buildDayPlan(route, opts = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// buildPlan memoization
+// ---------------------------------------------------------------------------
+
+/**
+ * One-entry memo for buildPlan.
+ *
+ * A single planning-control edit calls buildPlan up to nine times with identical
+ * arguments — directly from repaint, and indirectly via getActiveStopIds,
+ * getWaypointsWithSyntheticCamps and buildDaySegmentAnalytics. The computation is
+ * pure, so those repeats can share one result.
+ *
+ * The key covers everything buildPlan reads: the route object identity, its
+ * waypoint array (reassigned by enrichment and push-mutated by the waypoint
+ * editor), and the full option set (mutated in place by the stop/camp toggles).
+ * A key miss only costs a recompute, so erring toward misses is safe; handing
+ * back a stale plan is not.
+ */
+let planCacheKey = null;
+let planCacheRoute = null;
+let planCacheWaypoints = null;
+let planCacheValue = null;
+
+/**
+ * The same memo applied to getActiveStopIds, which repeats its own water-stop
+ * optimization and emergency resolution on top of buildPlan and is called three
+ * times per update (the planning repaint, the route stats bar, and the map sync).
+ */
+let stopIdsCacheKey = null;
+let stopIdsCacheRoute = null;
+let stopIdsCacheWaypoints = null;
+let stopIdsCacheValue = null;
+
+/** Drops the memoized plan and active-stop set. Exported for tests. */
+export function clearPlanCache() {
+  planCacheKey = null;
+  planCacheRoute = null;
+  planCacheWaypoints = null;
+  planCacheValue = null;
+  stopIdsCacheKey = null;
+  stopIdsCacheRoute = null;
+  stopIdsCacheWaypoints = null;
+  stopIdsCacheValue = null;
+}
+
+/**
+ * Builds a memo key for a (route, options) pair, or returns null when the
+ * options cannot be fingerprinted (which forces a miss).
+ * @param {import('./gpx.js').RouteContext} route
+ * @param {Partial<typeof PLAN_DEFAULTS>} opts
+ * @returns {string | null}
+ */
+function planCacheKeyFor(route, opts) {
+  try {
+    return `${route?.waypointsRevision ?? 0}|${route?.waypoints?.length ?? 0}|${
+      route?.trackPoints?.length ?? 0
+    }|${route?.totalDistanceMiles ?? 0}|${JSON.stringify(opts)}`;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Convenience: full plan bundle
 // ---------------------------------------------------------------------------
 
@@ -969,16 +1032,32 @@ export function buildDayPlan(route, opts = {}) {
  * @param {Partial<typeof PLAN_DEFAULTS>} [opts]
  */
 export function buildPlan(route, opts = {}) {
+  const key = planCacheKeyFor(route, opts);
+  if (
+    key !== null &&
+    key === planCacheKey &&
+    route === planCacheRoute &&
+    route?.waypoints === planCacheWaypoints
+  ) {
+    return planCacheValue;
+  }
+
   const o = resolveOptions(opts, resourceWaypoints(route));
   const dayPlan = buildDayPlan(route, o);
   const waterCarry = computeWaterCarry(route, { ...o, dayPlan });
   const foodCarry = computeFoodCarry(route, o);
-  return {
+  const plan = {
     options: o,
     waterCarry,
     foodCarry,
     dayPlan,
   };
+
+  planCacheKey = key;
+  planCacheRoute = route;
+  planCacheWaypoints = route?.waypoints ?? null;
+  planCacheValue = plan;
+  return plan;
 }
 
 /**
@@ -990,6 +1069,16 @@ export function buildPlan(route, opts = {}) {
 export function getActiveStopIds(route, opts) {
   const activeIds = new Set();
   if (!route) return activeIds;
+
+  const cacheKey = planCacheKeyFor(route, opts);
+  if (
+    cacheKey !== null &&
+    cacheKey === stopIdsCacheKey &&
+    route === stopIdsCacheRoute &&
+    route.waypoints === stopIdsCacheWaypoints
+  ) {
+    return stopIdsCacheValue;
+  }
 
   const total = route.totalDistanceMiles ?? 0;
   const waypoints = [...route.waypoints].sort(
@@ -1150,6 +1239,10 @@ export function getActiveStopIds(route, opts) {
     activeIds.add(wp.id);
   }
 
+  stopIdsCacheKey = cacheKey;
+  stopIdsCacheRoute = route;
+  stopIdsCacheWaypoints = route.waypoints;
+  stopIdsCacheValue = activeIds;
   return activeIds;
 }
 

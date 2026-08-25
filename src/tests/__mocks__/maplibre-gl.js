@@ -9,7 +9,23 @@ function makeMap() {
   const sources = new Map();
   const layers = new Map();
 
+  // Call counters so tests can assert that updates diff rather than rebuild.
+  const stats = {
+    addSource: 0,
+    removeSource: 0,
+    addLayer: 0,
+    removeLayer: 0,
+    setData: 0,
+    setPaintProperty: 0,
+  };
+
   const map = {
+    _stats: stats,
+    _sources: sources,
+    _layers: layers,
+    _resetStats: () => {
+      for (const k of Object.keys(stats)) stats[k] = 0;
+    },
     on: (event, cb) => {
       if (event === 'load' || event === 'style.load') cb();
       return map;
@@ -34,29 +50,47 @@ function makeMap() {
       if (!sources.has(id)) return null;
       return {
         setData: (data) => {
+          stats.setData++;
           sources.set(id, { ...sources.get(id), data });
         },
       };
     },
     addSource: (id, source) => {
+      stats.addSource++;
       sources.set(id, source);
       return map;
     },
     removeSource: (id) => {
+      // Real MapLibre throws if a layer still reads from the source.
+      for (const layer of layers.values()) {
+        if (layer.source === id) {
+          throw new Error(
+            `Source "${id}" cannot be removed while layer "${layer.id}" is using it.`,
+          );
+        }
+      }
+      stats.removeSource++;
       sources.delete(id);
       return map;
     },
     getLayer: (id) => layers.get(id) || null,
     addLayer: (layer) => {
+      stats.addLayer++;
       layers.set(layer.id, layer);
       return map;
     },
     removeLayer: (id) => {
+      stats.removeLayer++;
       layers.delete(id);
       return map;
     },
     setLayoutProperty: () => map,
-    setPaintProperty: () => map,
+    setPaintProperty: (layerId, prop, value) => {
+      stats.setPaintProperty++;
+      const layer = layers.get(layerId);
+      if (layer) layer.paint = { ...layer.paint, [prop]: value };
+      return map;
+    },
     addControl: () => map,
     fitBounds: () => map,
     flyTo: () => map,
