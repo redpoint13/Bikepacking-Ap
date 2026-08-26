@@ -925,8 +925,6 @@ function syncOptionsAndRepaint(root) {
       PLAN_DEFAULTS.waterSafetyMarginPercent,
     ),
     campWaterReserveOz: read('#plan-camp-water-reserve', PLAN_DEFAULTS.campWaterReserveOz),
-    stopOverheadMinutes: read('#plan-stop-overhead', PLAN_DEFAULTS.stopOverheadMinutes),
-    waterWeightPenalty: read('#plan-weight-penalty', PLAN_DEFAULTS.waterWeightPenalty),
   };
   persistUserPreferences(planOptions);
   isSyncing = true;
