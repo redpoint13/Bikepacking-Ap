@@ -9,47 +9,63 @@ import { PLAN_DEFAULTS } from './plan.js';
 export function getPlanDefaults() {
   const defaults = { ...PLAN_DEFAULTS };
 
-  const targetDailyMiles = localStorage.getItem('bpnav-targetDailyMiles');
-  if (targetDailyMiles !== null) defaults.targetDailyMiles = Number(targetDailyMiles);
+  const readItem = (
+    key,
+    fallback,
+    min = Number.NEGATIVE_INFINITY,
+    max = Number.POSITIVE_INFINITY,
+  ) => {
+    const raw = localStorage.getItem(key);
+    if (raw === null || raw === '' || raw === 'undefined' || raw === 'null') return fallback;
+    const num = Number(raw);
+    if (!Number.isFinite(num)) return fallback;
+    return Math.max(min, Math.min(max, num));
+  };
 
-  const waterCapacityOz = localStorage.getItem('bpnav-waterCapacityOz');
-  if (waterCapacityOz !== null) defaults.waterCapacityOz = Number(waterCapacityOz);
-
-  const ozPerMile = localStorage.getItem('bpnav-ozPerMile');
-  if (ozPerMile !== null) defaults.ozPerMile = Number(ozPerMile);
-
-  const reliableWaterThreshold = localStorage.getItem('bpnav-reliableWaterThreshold');
-  if (reliableWaterThreshold !== null)
-    defaults.reliableWaterThreshold = Number(reliableWaterThreshold);
-
-  const caloriesPerDay = localStorage.getItem('bpnav-caloriesPerDay');
-  if (caloriesPerDay !== null) defaults.caloriesPerDay = Number(caloriesPerDay);
-
-  const campMealsPerDay = localStorage.getItem('bpnav-campMealsPerDay');
-  if (campMealsPerDay !== null) defaults.campMealsPerDay = Number(campMealsPerDay);
-
-  const caloriesPerCampMeal = localStorage.getItem('bpnav-caloriesPerCampMeal');
-  if (caloriesPerCampMeal !== null) defaults.caloriesPerCampMeal = Number(caloriesPerCampMeal);
-
-  const avgSnackCalories = localStorage.getItem('bpnav-avgSnackCalories');
-  if (avgSnackCalories !== null) defaults.avgSnackCalories = Number(avgSnackCalories);
-
-  const maxDetourMi = localStorage.getItem('bpnav-maxDetourMi');
-  if (maxDetourMi !== null) defaults.maxDetourMi = Number(maxDetourMi);
+  defaults.targetDailyMiles = readItem('bpnav-targetDailyMiles', defaults.targetDailyMiles, 5, 200);
+  defaults.waterCapacityOz = readItem('bpnav-waterCapacityOz', defaults.waterCapacityOz, 16, 400);
+  defaults.ozPerMile = readItem('bpnav-ozPerMile', defaults.ozPerMile, 1, 20);
+  defaults.reliableWaterThreshold = readItem(
+    'bpnav-reliableWaterThreshold',
+    defaults.reliableWaterThreshold,
+    0,
+    100,
+  );
+  defaults.caloriesPerDay = readItem('bpnav-caloriesPerDay', defaults.caloriesPerDay, 1000, 10000);
+  defaults.campMealsPerDay = readItem('bpnav-campMealsPerDay', defaults.campMealsPerDay, 0, 5);
+  defaults.caloriesPerCampMeal = readItem(
+    'bpnav-caloriesPerCampMeal',
+    defaults.caloriesPerCampMeal,
+    200,
+    2000,
+  );
+  defaults.avgSnackCalories = readItem(
+    'bpnav-avgSnackCalories',
+    defaults.avgSnackCalories,
+    50,
+    1000,
+  );
+  defaults.maxDetourMi = readItem('bpnav-maxDetourMi', defaults.maxDetourMi, 0.1, 25);
 
   return defaults;
 }
 
 export function persistUserPreferences(options) {
-  localStorage.setItem('bpnav-targetDailyMiles', options.targetDailyMiles);
-  localStorage.setItem('bpnav-waterCapacityOz', options.waterCapacityOz);
-  localStorage.setItem('bpnav-ozPerMile', options.ozPerMile);
-  localStorage.setItem('bpnav-reliableWaterThreshold', options.reliableWaterThreshold);
-  localStorage.setItem('bpnav-caloriesPerDay', options.caloriesPerDay);
-  localStorage.setItem('bpnav-campMealsPerDay', options.campMealsPerDay);
-  localStorage.setItem('bpnav-caloriesPerCampMeal', options.caloriesPerCampMeal);
-  localStorage.setItem('bpnav-avgSnackCalories', options.avgSnackCalories);
-  localStorage.setItem('bpnav-maxDetourMi', options.maxDetourMi);
+  if (!options) return;
+  const save = (key, val) => {
+    if (val != null && Number.isFinite(Number(val))) {
+      localStorage.setItem(key, String(val));
+    }
+  };
+  save('bpnav-targetDailyMiles', options.targetDailyMiles);
+  save('bpnav-waterCapacityOz', options.waterCapacityOz);
+  save('bpnav-ozPerMile', options.ozPerMile);
+  save('bpnav-reliableWaterThreshold', options.reliableWaterThreshold);
+  save('bpnav-caloriesPerDay', options.caloriesPerDay);
+  save('bpnav-campMealsPerDay', options.campMealsPerDay);
+  save('bpnav-caloriesPerCampMeal', options.caloriesPerCampMeal);
+  save('bpnav-avgSnackCalories', options.avgSnackCalories);
+  save('bpnav-maxDetourMi', options.maxDetourMi);
 }
 
 class AppState {
