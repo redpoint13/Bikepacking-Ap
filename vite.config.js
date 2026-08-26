@@ -1,8 +1,8 @@
-import { VitePWA } from 'vite-plugin-pwa';
-import { defineConfig } from 'vite';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createRequire } from 'node:module';
+import { defineConfig } from 'vite';
+import { VitePWA } from 'vite-plugin-pwa';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -77,23 +77,48 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png}'],
         runtimeCaching: [
-          // USGS water data — NetworkFirst so fresh data wins; 2 h cache as offline fallback.
+          // USGS — both hosts. api.waterdata serves monitoring locations, and
+          // waterservices serves live flow and percentile stats; only the first
+          // was cached, so streamflow vanished offline. NetworkFirst keeps fresh
+          // data winning while there is signal. The old 2 h expiry meant a cached
+          // copy was already gone by the second morning of a trip; 30 days keeps
+          // a stale reading available, which beats no reading in the backcountry.
           {
-            urlPattern: /^https:\/\/api\.waterdata\.usgs\.gov\/.*/i,
+            urlPattern: /^https:\/\/(api\.waterdata|waterservices)\.usgs\.gov\/.*/i,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'usgs-water-data',
-              expiration: { maxAgeSeconds: 60 * 60 * 2 },
+              networkTimeoutSeconds: 10,
+              expiration: { maxAgeSeconds: 60 * 60 * 24 * 30, maxEntries: 500 },
+              cacheableResponse: { statuses: [0, 200] },
             },
           },
-          // OSM Overpass — StaleWhileRevalidate: serve cached instantly, refresh in background.
-          // 7-day expiry covers a typical multi-day route planning window.
+          // OSM Overpass — all four mirrors that fetchOverpass rotates through.
+          // Only the primary was cached before, so whether water, camp and
+          // resupply data survived offline depended on which mirror happened to
+          // answer. 30-day expiry covers planning well ahead of a trip.
           {
-            urlPattern: /^https:\/\/overpass-api\.de\/.*/i,
+            urlPattern:
+              /^https:\/\/(overpass-api\.de|lz4\.overpass-api\.de|z\.overpass-api\.de|overpass\.kumi\.systems)\/.*/i,
             handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'osm-overpass',
-              expiration: { maxAgeSeconds: 60 * 60 * 24 * 7 },
+              expiration: { maxAgeSeconds: 60 * 60 * 24 * 30, maxEntries: 500 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          // Weather, elevation fallback and BLM land ownership. None were cached,
+          // so all three simply failed once out of signal. They are advisory
+          // rather than safety-critical, but a stale forecast still beats none.
+          {
+            urlPattern:
+              /^https:\/\/(api\.open-meteo\.com|api\.opentopodata\.org|gis\.blm\.gov)\/.*/i,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'route-context-data',
+              networkTimeoutSeconds: 10,
+              expiration: { maxAgeSeconds: 60 * 60 * 24 * 14, maxEntries: 500 },
+              cacheableResponse: { statuses: [0, 200] },
             },
           },
           // OpenFreeMap style JSON + tiles — CacheFirst, large entry limit for full-route tiles.
@@ -103,10 +128,16 @@ export default defineConfig({
             handler: 'CacheFirst',
             options: {
               cacheName: 'map-tiles',
+              // A 240 mi route needs ~2,100 tiles at z10-15 and ~4,300 at z10-16,
+              // and the count scales with route length — a 2,700 mi route at
+              // z10-15 is ~23,000, which the old 15,000 cap would have evicted
+              // mid-ride, silently, starting with the tiles fetched first.
+              // A year of expiry suits a route planned well in advance.
               expiration: {
-                maxAgeSeconds: 60 * 60 * 24 * 30,
-                maxEntries: 15000,
+                maxAgeSeconds: 60 * 60 * 24 * 365,
+                maxEntries: 60000,
               },
+              cacheableResponse: { statuses: [0, 200] },
             },
           },
           // MapLibre GL fonts (glyphs) — served from various CDN origins; cache aggressively.

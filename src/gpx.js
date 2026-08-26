@@ -879,10 +879,13 @@ export async function fetchOverpass(query) {
   for (let attempt = 0; attempt < 3; attempt++) {
     const url = OVERPASS_MIRRORS[attempt % OVERPASS_MIRRORS.length];
     try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `data=${encodeURIComponent(query)}`,
+      // GET, not POST: the Cache API cannot store a response to a POST, so the
+      // service worker's Overpass rule silently cached nothing while this used
+      // POST. Overpass documents ?data= as an equivalent interface, and the
+      // query lands well inside URL length limits, so this is what makes the
+      // offline replay of water, camp and resupply queries actually work.
+      const res = await fetch(`${url}?data=${encodeURIComponent(query)}`, {
+        method: 'GET',
         signal: AbortSignal.timeout(15_000),
       });
 
