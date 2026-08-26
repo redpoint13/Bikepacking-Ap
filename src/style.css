@@ -1129,6 +1129,18 @@ svg {
 }
 
 /* parameter inputs container */
+/* The route-start control sits in the same stack as MapLibre's zoom and
+   locate-me buttons, which draw their icons from a sprite we are not part of,
+   so this one renders a glyph instead. */
+.bpnav-ctrl-route-start {
+  font-size: 17px;
+  line-height: 1;
+  color: #333;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .plan-controls {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
