@@ -1810,7 +1810,12 @@ async function tryRestoreRoute(container) {
     }
 
     const route = await parseGPXAsync(stored.gpxText);
-    applyRoute(container, route);
+    // skipEnrichment: this path applies the cached enrichment below and starts
+    // its own passes afterwards. Letting applyRoute enrich here ran every pass
+    // twice, and its clearEnrichment() wiped the cache moments before the
+    // loadEnrichment() below reads it — so a restore came up with no markers
+    // whenever the network was slow, which is exactly when the cache matters.
+    applyRoute(container, route, true);
 
     // Apply cached enrichment immediately so markers render without waiting
     // for a network round-trip — critical when the device is offline.
