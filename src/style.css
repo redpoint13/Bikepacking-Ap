@@ -990,6 +990,20 @@ svg {
   #mode-toggle {
     display: none !important;
   }
+
+  /* The sidebar is the only scroller on desktop (body/#app/.dashboard are all
+     overflow:hidden), and on a laptop-height window the tab strip sits below the
+     fold — around y=977 in a 900px viewport. Pinning it keeps Water/Food/Camps
+     reachable at any scroll position instead of something you have to find.
+     Mobile is left alone: there the page scrolls and .app-header owns top:0. */
+  .plan-tabs {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 5 !important;
+    background-color: var(--md-sys-color-background) !important;
+    margin-top: 0 !important;
+    padding-top: var(--spacing-md) !important;
+  }
 }
 
 /* --------------------------------------------------------------------------
