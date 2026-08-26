@@ -685,17 +685,80 @@ export function computeFoodCarry(route, opts = {}) {
  * @param {number} windowHi  - absolute upper bound (miles)
  * @returns {import('./gpx.js').Waypoint | null}
  */
+/**
+ * Quality penalties, expressed in miles-off-target.
+ *
+ * Distance to the day's target stays the primary axis — a camp 15 miles early
+ * is a worse day whatever its amenities — but these let a known, watered site
+ * win over an unknown point a little closer. Stated in miles so the trade is
+ * legible: a dry camp is worth riding 2.5 miles further to avoid.
+ */
+const CAMP_PENALTY_MI = {
+  /** Scaled by how far reliability falls short of certain. */
+  unknownReliability: 3,
+  /** No water at the site: everything must be carried in. */
+  noWater: 2.5,
+  /** Water status simply unrecorded — worth less than a known dry camp. */
+  unknownWater: 1,
+};
+
+/**
+ * Whether camping at this site is legal for a rider.
+ *
+ * isDispersedLegal answers "may I pitch anywhere on this land", which only
+ * governs dispersed sites. An official campground on private land — a KOA, a
+ * state park — is somewhere you are explicitly invited to camp, so excluding it
+ * for the same reason would throw away the best sites on the route.
+ *
+ * @param {import('./gpx.js').Waypoint} camp
+ * @returns {boolean}
+ */
+export function isCampLegal(camp) {
+  const dispersed = camp?.isSynthetic || camp?.tier === 'dispersed' || !camp?.tier;
+  if (!dispersed) return true;
+  return camp?.isDispersedLegal !== false;
+}
+
+/**
+ * Cost of choosing a camp, in miles-off-target.
+ * @param {import('./gpx.js').Waypoint} camp
+ * @param {number} targetMi
+ * @returns {number}
+ */
+export function campCost(camp, targetMi) {
+  let cost = Math.abs(camp.distanceFromStartMi - targetMi);
+
+  // The app's own confidence in the site. A synthetic point has none, and
+  // records that as null rather than pretending to certainty.
+  const reliability = camp.reliability ?? 0;
+  cost += ((100 - reliability) / 100) * CAMP_PENALTY_MI.unknownReliability;
+
+  if (camp.waterAvailable === 'none') cost += CAMP_PENALTY_MI.noWater;
+  else if (camp.waterAvailable == null || camp.waterAvailable === 'unknown') {
+    cost += CAMP_PENALTY_MI.unknownWater;
+  }
+
+  return cost;
+}
+
+/**
+ * Picks the best camp for a day: nearest the target, adjusted for what is
+ * actually known about each site. Selection used to be distance alone, which
+ * ignored every quality signal camp.js computes — an established site with
+ * water lost to an unknown point a tenth of a mile closer.
+ */
 function pickCampNear(camps, afterMi, targetMi, windowLo, windowHi) {
   let best = null;
-  let bestDelta = Number.POSITIVE_INFINITY;
+  let bestCost = Number.POSITIVE_INFINITY;
   for (const c of camps) {
     const mi = c.distanceFromStartMi;
     if (mi <= afterMi + 0.05) continue;
     if (mi < windowLo || mi > windowHi) continue;
-    const delta = Math.abs(mi - targetMi);
-    if (delta < bestDelta) {
+    if (!isCampLegal(c)) continue;
+    const cost = campCost(c, targetMi);
+    if (cost < bestCost) {
       best = c;
-      bestDelta = delta;
+      bestCost = cost;
     }
   }
   return best;
@@ -903,7 +966,11 @@ export function buildDayPlan(route, opts = {}) {
 
       return {
         campId,
-        campName: `Dispersed Camp (mi ${targetMi.toFixed(1)})`,
+        // Named for what it is. "Dispersed Camp" read like a found site; this
+        // is the mile the day happens to end at. The legacy string is still
+        // matched by the synthetic-waypoint strippers in export/storage/app so
+        // plans saved under the old name keep being filtered correctly.
+        campName: `Target mi ${targetMi.toFixed(1)} — no known site`,
         endMi: targetMi,
         miles: round1(targetMi - startMi),
         nextWaterMi: waterInfo ? waterInfo.miles : null,
@@ -1285,13 +1352,22 @@ export function getWaypointsWithSyntheticCamps(route, opts) {
       if (pt) {
         waypoints.push({
           id: chosen.campId,
-          name: chosen.campName || `Day ${d.day} Dispersed Camp`,
+          name: chosen.campName || `Day ${d.day} target — no known campsite`,
           type: 'camping',
           lat: pt[0],
           lon: pt[1],
           distanceFromStartMi: chosen.endMi,
-          description: `Wilderness dispersed camping option for Day ${d.day}.`,
-          reliability: 100,
+          description:
+            `No campsite is known near mile ${round1(chosen.endMi)}. This is simply where ` +
+            `Day ${d.day} reaches your target distance — you will need to find a spot. ` +
+            'Check the land is open to camping before you rely on it.',
+          // Deliberately null, not 100. This is a point on a line, not a site:
+          // nothing is known about whether it is flat, sheltered, legal or even
+          // campable. A score of 100 made the least-informed markers on the map
+          // look like the most dependable ones. Null hides the reliability bar
+          // rather than inventing a number for it.
+          reliability: null,
+          needsSiteSelection: true,
           isSynthetic: true,
           source: 'synthetic',
         });
