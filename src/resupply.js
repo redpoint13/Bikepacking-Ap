@@ -195,8 +195,28 @@ export async function fetchOSMResupply(bounds) {
     `node["tourism"="motel"](${bbox});`,
     `node["tourism"="hotel"](${bbox});`,
     `node["tourism"="guest_house"](${bbox});`,
+    // Ways: shops, restaurants and lodgings are routinely mapped as building
+    // polygons rather than points. Querying nodes only made all of those
+    // invisible to resupply planning.
+    `way["shop"="supermarket"](${bbox});`,
+    `way["shop"="grocery"](${bbox});`,
+    `way["shop"="general"](${bbox});`,
+    `way["shop"="convenience"](${bbox});`,
+    `way["shop"="outdoor"](${bbox});`,
+    `way["shop"="bicycle"](${bbox});`,
+    `way["shop"="sports"](${bbox});`,
+    `way["amenity"="fuel"](${bbox});`,
+    `way["amenity"="restaurant"](${bbox});`,
+    `way["amenity"="cafe"](${bbox});`,
+    `way["amenity"="fast_food"](${bbox});`,
+    `way["amenity"="pub"](${bbox});`,
+    `way["amenity"="bar"](${bbox});`,
+    `way["tourism"="hostel"](${bbox});`,
+    `way["tourism"="motel"](${bbox});`,
+    `way["tourism"="hotel"](${bbox});`,
+    `way["tourism"="guest_house"](${bbox});`,
     ');',
-    'out body;',
+    'out center;',
   ].join('');
 
   try {
@@ -231,7 +251,10 @@ export function mergeResupplySources(route, osmElements) {
   const merged = [...existing];
 
   for (const el of osmElements) {
-    const { lat, lon, tags = {} } = el;
+    const { tags = {} } = el;
+    // `out center` gives a way its centroid in el.center; nodes keep lat/lon.
+    const lat = el.lat ?? el.center?.lat;
+    const lon = el.lon ?? el.center?.lon;
     if (lat == null || lon == null) continue;
     if (!isNearRoute(lat, lon, sampled)) continue;
     if (merged.some((w) => haversineDistance(lat, lon, w.lat, w.lon) < DEDUP_THRESHOLD_MI)) {
@@ -241,7 +264,11 @@ export function mergeResupplySources(route, osmElements) {
     const cat = osmResupplyCategory(tags);
 
     merged.push({
-      id: `osm-resupply-${el.id}`,
+      // Node and way ids share a numeric space in OSM, so a way needs its own
+      // namespace. Node ids keep their original form: they are persisted in
+      // excludedResupplyIds/forcedResupplyIds, and renaming them would silently
+      // discard every stop a user had already skipped or forced.
+      id: el.type === 'way' ? `osm-resupply-way-${el.id}` : `osm-resupply-${el.id}`,
       lat,
       lon,
       name: osmResupplyLabel(tags),

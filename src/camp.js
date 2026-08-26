@@ -5,6 +5,10 @@
 import { ENRICHMENT_LIMITS, capEnrichedWaypoints } from './enrichmentLimits.js';
 import { describeError } from './errorBoundary.js';
 import { distanceFromStart, fetchOverpass, haversineDistance } from './gpx.js';
+/** Surface Management Agency layer. Layer 0 is IDENTIFY and is not queryable. */
+const BLM_SMA_LAYER =
+  'https://gis.blm.gov/arcgis/rest/services/lands/BLM_Natl_SMA_Cached_with_PriUnk/MapServer/1';
+
 const ROUTE_PROXIMITY_MI = 2.0;
 const DEDUP_THRESHOLD_MI = 0.1;
 const SAMPLE_STEP = 20;
@@ -205,15 +209,40 @@ export function classifyLandManager(tags = {}, agencyCode = '') {
 }
 
 export async function fetchLandOwnership(lat, lon) {
-  const url = `https://gis.blm.gov/arcgis/rest/services/lands/BLM_Natl_SMA_Cached/MapServer/0/query?geometry=${lon},${lat}&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=ADMIN_AGENCY_CODE,HOLDING_NAME,ADMIN_UNIT_NAME&f=json`;
+  // Three separate faults lived in this URL, and every one of them failed
+  // quietly. The service `BLM_Natl_SMA_Cached` does not exist — the real ones
+  // are suffixed (_with_PriUnk, _without_PriUnk, _BLM_Only) — and ArcGIS
+  // answers a missing service with HTTP 200 and a JSON error body, so res.ok
+  // was true and the catch never fired. Layer 0 is IDENTIFY, not a queryable
+  // feature layer; Surface Management Agency is layer 1. And HOLDING_NAME is
+  // not a field on it, which fails the whole query with "Failed to execute
+  // query" even once the service and layer are right.
+  //
+  // The fallback returns "Public Land" with dispersed camping legal, so while
+  // this was broken every camp was labelled as legal to disperse on, private
+  // land included.
+  const params = new URLSearchParams({
+    geometry: `${lon},${lat}`,
+    geometryType: 'esriGeometryPoint',
+    inSR: '4326',
+    spatialRel: 'esriSpatialRelIntersects',
+    outFields: 'ADMIN_AGENCY_CODE,ADMIN_DEPT_CODE,ADMIN_UNIT_NAME',
+    returnGeometry: 'false',
+    f: 'json',
+  });
+  const url = `${BLM_SMA_LAYER}/query?${params}`;
+
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
+    const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
     if (!res.ok) throw new Error(`BLM REST HTTP ${res.status}`);
     const data = await res.json();
+    // ArcGIS reports a bad service or query in the body, with a 200 status.
+    if (data.error) throw new Error(`BLM REST: ${data.error.message ?? 'query failed'}`);
     const attrs = data.features?.[0]?.attributes ?? {};
-    const agencyCode = attrs.ADMIN_AGENCY_CODE || attrs.HOLDING_NAME || '';
+    const agencyCode = attrs.ADMIN_AGENCY_CODE || attrs.ADMIN_DEPT_CODE || '';
     return classifyLandManager({}, agencyCode);
-  } catch (_err) {
+  } catch (err) {
+    console.warn('[BPNav] Land ownership lookup failed:', describeError(err));
     return classifyLandManager({}, '');
   }
 }
