@@ -149,8 +149,39 @@ svg {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--spacing-sm);
   padding: var(--spacing-sm) var(--spacing-md);
   min-height: var(--min-touch-target);
+}
+
+/* At 360px — still the commonest Android width — the title plus the action
+   buttons do not fit, and the header pushed the whole page wider than the
+   screen. Let the brand shrink and the title ellipsize; the buttons are the
+   part you cannot truncate. min-width:0 is required because a flex item
+   defaults to min-width:auto and refuses to shrink below its text. */
+.app-brand {
+  min-width: 0;
+}
+
+.app-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header-chips {
+  /* Shrink rather than push the page wide: at 360px the chips row is ~372px on
+     its own once a route is loaded. The status chip carries the route name and
+     is the only part that can lose characters gracefully. */
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.header-chips .status-chip {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .app-brand {
@@ -1139,6 +1170,27 @@ svg {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* The seven tab buttons cannot shrink below their labels, so the strip forced
+   .plan-section -> .planning-view -> .dashboard -> the page itself open to
+   ~542px. On a phone that pushed the left edge of every control off screen:
+   labels arrived sliced to "RGET", "CAL", "RFACE TYPE". Scrolling the strip
+   inside its own box keeps the page at the device width while the buttons keep
+   their full labels. */
+.plan-tabs {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.plan-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.plan-tab-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .plan-controls {
