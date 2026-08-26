@@ -31,6 +31,7 @@ import {
   destroyMap,
   highlightMapSegment,
   initMap,
+  setMapRouteStart,
   updateMapDayPlan,
   updateMapWaypoints,
   updateMileMarkers,
@@ -142,6 +143,10 @@ function _executeSyncMapState() {
 
   const plan = buildPlan(currentRoute, planOptions);
   updateMapDayPlan(currentMap, currentRoute.trackPoints, plan.dayPlan);
+
+  // Keeps the "jump to start" control pointing at the rider's actual start,
+  // which applyStartOffset moves without rebuilding the map.
+  setMapRouteStart(currentMap, currentRoute);
 }
 
 /**

@@ -41,6 +41,66 @@ const MARKER_SIZES = {
 /** Tracks active markers per map instance so they can be removed on update. */
 const mapMarkers = new WeakMap();
 
+/**
+ * The rider's start point per map, as [lon, lat]. Held per map rather than
+ * captured when the control is built, because "Start at mile" adjusts the start
+ * without rebuilding the map — a captured value would strand the button at the
+ * old position.
+ * @type {WeakMap<maplibregl.Map, [number, number]>}
+ */
+const routeStartByMap = new WeakMap();
+
+/**
+ * Records where the rider starts, for the "jump to start" control. Call after
+ * anything that moves the start, including applyStartOffset.
+ * @param {maplibregl.Map} map
+ * @param {import('./gpx.js').RouteContext} route
+ */
+export function setMapRouteStart(map, route) {
+  if (!map || !route?.trackPoints?.length) return;
+  // getCoordinatesAtMile yields a trackPoint array [lat, lon, ele], not an
+  // object — reading .lat off it silently produced undefined.
+  const [lat, lon] = getCoordinatesAtMile(route.trackPoints, route.startOffsetMi ?? 0) ?? [];
+  if (Number.isFinite(lat) && Number.isFinite(lon)) {
+    routeStartByMap.set(map, [lon, lat]);
+  }
+}
+
+/**
+ * A "jump to the start of the route" button, sitting with the zoom and
+ * locate-me controls. MapLibre ships the locate-me half of this; getting back
+ * to the start after panning down-route had no equivalent.
+ */
+class RouteStartControl {
+  onAdd(map) {
+    this._map = map;
+    const container = document.createElement('div');
+    container.className = 'maplibregl-ctrl maplibregl-ctrl-group';
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'maplibregl-ctrl-icon bpnav-ctrl-route-start';
+    button.title = 'Jump to the start of the route';
+    button.setAttribute('aria-label', 'Jump to the start of the route');
+    button.innerHTML = '<span aria-hidden="true">\u2691</span>';
+
+    button.addEventListener('click', () => {
+      const start = routeStartByMap.get(map);
+      if (!start) return;
+      map.flyTo({ center: start, zoom: Math.max(map.getZoom(), 13), duration: 900 });
+    });
+
+    container.appendChild(button);
+    this._container = container;
+    return container;
+  }
+
+  onRemove() {
+    this._container?.parentNode?.removeChild(this._container);
+    this._map = undefined;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Map initialisation
 // ---------------------------------------------------------------------------
@@ -107,6 +167,9 @@ export function initMap(container, route, activeStopIds = new Set(), customWaypo
     }),
     'top-right',
   );
+
+  map.addControl(new RouteStartControl(), 'top-right');
+  setMapRouteStart(map, route);
 
   return map;
 }
