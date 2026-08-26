@@ -25,7 +25,10 @@ export async function syncOfflineMap(route, onProgress) {
   // PWA workbox handles fonts, but we could pre-fetch a few common ranges if desired.
   // We'll skip fonts for now to save bandwidth, as they cache well during normal usage.
 
-  const tiles = getTilesForRoute(route, 10, 15);
+  // z16 doubles the tile count but is the difference between "there is a town
+  // here" and being able to find the spigot in it. Sync is an explicit,
+  // progress-reported action taken on wifi, so the cost is the user's to accept.
+  const tiles = getTilesForRoute(route, 10, 16);
   const totalAssets = styleAssets.length + tiles.length;
   let currentAssets = 0;
 
