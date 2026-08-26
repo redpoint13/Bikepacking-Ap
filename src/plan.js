@@ -42,6 +42,10 @@ export const PLAN_DEFAULTS = {
   waterSafetyMarginPercent: 20,
   /** Water needed for camp chores, dinner, overnight & morning (oz). */
   campWaterReserveOz: 40,
+  /** Overhead time penalty per water stop (minutes). Higher = fewer, longer legs. */
+  stopOverheadMinutes: 15,
+  /** Cost of carrying 1 oz of water for 1 mile (minutes). Higher = more frequent refills. */
+  waterWeightPenalty: 0.1,
   /** Array of waypoint IDs to explicitly skip. */
   excludedWaterIds: [],
   /** Array of waypoint IDs to explicitly force as stops. */
@@ -377,6 +381,8 @@ export function optimizeWaterStops(route, candidates, o, campStops = []) {
   const capacity = o.waterCapacityOz ?? 100;
   const safetyPercent = o.waterSafetyMarginPercent ?? 20;
   const safeCapacity = capacity * (1 - safetyPercent / 100);
+  const stopOverhead = o.stopOverheadMinutes ?? PLAN_DEFAULTS.stopOverheadMinutes;
+  const weightPenalty = o.waterWeightPenalty ?? PLAN_DEFAULTS.waterWeightPenalty;
 
   // Nodes in order from Start (0) to Finish (total)
   const sortedCandidates = [...candidates].sort(
@@ -492,6 +498,20 @@ export function optimizeWaterStops(route, candidates, o, campStops = []) {
       if (c.wp.type === 'resupply') {
         score -= 4.0;
       }
+
+      // Stop cost and carry cost, both expressed in minutes per mile of the leg
+      // this candidate would close, so the two are directly comparable.
+      //
+      // A stop costs stopOverheadMinutes however short the leg is, so a short
+      // leg amortises that fixed cost over fewer miles and scores worse: this
+      // is the term that argues for fewer, longer legs. Carrying the water for
+      // the leg costs waterWeightPenalty per ounce per mile, and a longer leg
+      // puts more water on the bike, so this term argues the other way. Water
+      // is drunk down as the leg progresses, so the average load carried is
+      // about half the demand for it.
+      const legMiles = Math.max(distFromLast, 0.1);
+      score += stopOverhead / legMiles;
+      score += (c.demand / 2) * weightPenalty;
 
       // Lookahead check: from candidate c, can we reach another water source or finish?
       const nextRemaining = sortedCandidates.filter((w) => w.distanceFromStartMi > c.mi + 0.1);
