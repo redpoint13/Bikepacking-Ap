@@ -866,18 +866,32 @@ export function osmElementReliability(tags, type) {
  * @param {string} query - Overpass QL query string
  * @returns {Promise<any>} Parsed JSON response
  */
-export async function fetchOverpass(query) {
-  const OVERPASS_MIRRORS = [
-    'https://overpass-api.de/api/interpreter',
-    'https://lz4.overpass-api.de/api/interpreter',
-    'https://z.overpass-api.de/api/interpreter',
-    'https://overpass.kumi.systems/api/interpreter',
-  ];
+/** Overpass mirrors, tried in order, once each. */
+const OVERPASS_MIRRORS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://lz4.overpass-api.de/api/interpreter',
+  'https://z.overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+];
 
+/**
+ * Waits before trying the next mirror, and not at all after the last one —
+ * a delay there only postpones a failure the caller is already blocked on.
+ * @param {number} attempt
+ */
+function backoffBeforeNextMirror(attempt) {
+  if (attempt >= OVERPASS_MIRRORS.length - 1) return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+}
+
+export async function fetchOverpass(query) {
   let lastError = null;
 
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const url = OVERPASS_MIRRORS[attempt % OVERPASS_MIRRORS.length];
+  // Every mirror, once each. This ran `attempt < 3` against a four-entry list,
+  // so index 3 was unreachable code — the last mirror was never tried, however
+  // completely the others failed.
+  for (let attempt = 0; attempt < OVERPASS_MIRRORS.length; attempt++) {
+    const url = OVERPASS_MIRRORS[attempt];
     try {
       // GET, not POST: the Cache API cannot store a response to a POST, so the
       // service worker's Overpass rule silently cached nothing while this used
@@ -891,7 +905,7 @@ export async function fetchOverpass(query) {
 
       if (res.status === 429) {
         console.warn(`[BPNav] Overpass mirror ${url} rate-limited (429). Trying next...`);
-        await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+        await backoffBeforeNextMirror(attempt);
         continue;
       }
 
@@ -903,7 +917,7 @@ export async function fetchOverpass(query) {
     } catch (err) {
       console.warn(`[BPNav] Overpass query failed on ${url}:`, describeError(err));
       lastError = err;
-      await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+      await backoffBeforeNextMirror(attempt);
     }
   }
 

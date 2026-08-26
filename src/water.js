@@ -69,12 +69,59 @@ export function isNearRoute(lat, lon, sampledPoints) {
  * @param {object} feature - GeoJSON feature from USGS OGC API
  * @returns {number}
  */
+/**
+ * USGS site types a rider can actually take water from.
+ *
+ * The corridor for a long route returns thousands of monitoring locations, and
+ * most are not water you can drink: groundwater observation wells (GW*) are
+ * boreholes, AT is an atmospheric sensor, FA* are facilities — including, in
+ * the Colorado Trail corridor, a sewage works. Anything not listed here is
+ * dropped rather than scored, so it can never be offered as a refill.
+ */
+export const USGS_DRINKABLE_SITE_TYPES = {
+  SP: 80, // spring — usually perennial, the best of these
+  ST: 70, // stream
+  LK: 65, // lake
+  'ST-CA': 55, // canal — seasonal, and agricultural
+  'ST-DCH': 55, // ditch — same
+};
+
+/**
+ * Reads a USGS site's type. The API returns snake_case; the previous camelCase
+ * lookup silently missed, which left every site scored the same.
+ * @param {object} feature
+ * @returns {string}
+ */
+export function usgsSiteType(feature) {
+  const p = feature?.properties ?? {};
+  return p.site_type_code ?? p.siteTypeCode ?? '';
+}
+
+/**
+ * Derives a reliability score from the USGS site type. Returns 0 for anything
+ * that is not a drinkable source, which keeps it below any usable threshold.
+ * @param {object} feature
+ * @returns {number}
+ */
+/**
+ * Human label for a USGS site type, so a marker says what it actually is
+ * rather than the uniform "USGS monitoring station".
+ * @param {object} feature
+ * @returns {string}
+ */
+export function usgsSiteLabel(feature) {
+  const labels = {
+    SP: 'Spring (USGS)',
+    ST: 'Stream (USGS gauge)',
+    LK: 'Lake (USGS)',
+    'ST-CA': 'Canal (USGS)',
+    'ST-DCH': 'Ditch (USGS)',
+  };
+  return labels[usgsSiteType(feature)] ?? 'USGS monitoring station';
+}
+
 export function usgsReliability(feature) {
-  const type = (feature.properties?.monitoringLocationType ?? '').toLowerCase();
-  if (type.includes('stream') || type.includes('river')) return 75;
-  if (type.includes('spring')) return 65;
-  if (type.includes('well')) return 55;
-  return 60;
+  return USGS_DRINKABLE_SITE_TYPES[usgsSiteType(feature)] ?? 0;
 }
 
 /**
@@ -121,19 +168,35 @@ export function osmLabel(tags) {
  */
 export async function fetchUSGSLocations(bounds) {
   const { minLon, minLat, maxLon, maxLat } = bounds;
-  const params = new URLSearchParams({
-    f: 'json',
-    bbox: `${minLon},${minLat},${maxLon},${maxLat}`,
-    limit: '200',
-  });
+  const bbox = `${minLon},${minLat},${maxLon},${maxLat}`;
+
+  // Ask the server for only the site types a rider can drink from, and only
+  // the fields we use. The Colorado Trail corridor holds ~5,100 sites, of which
+  // ~2,100 are drinkable — the old single unfiltered request capped at 200
+  // returned 4% of them, mostly monitoring wells. site_type_code takes one
+  // value per request (comma lists return nothing), so these go in parallel.
+  const fields = 'monitoring_location_name,monitoring_location_number,site_type_code';
+  const types = Object.keys(USGS_DRINKABLE_SITE_TYPES);
 
   try {
-    const res = await fetch(`${USGS_BASE}?${params}`, {
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!res.ok) throw new Error(`USGS HTTP ${res.status}`);
-    const data = await res.json();
-    return data.features ?? [];
+    const responses = await Promise.all(
+      types.map(async (siteType) => {
+        const params = new URLSearchParams({
+          f: 'json',
+          bbox,
+          limit: '2000',
+          properties: fields,
+          site_type_code: siteType,
+        });
+        const res = await fetch(`${USGS_BASE}?${params}`, {
+          signal: AbortSignal.timeout(20_000),
+        });
+        if (!res.ok) throw new Error(`USGS HTTP ${res.status} for ${siteType}`);
+        const data = await res.json();
+        return data.features ?? [];
+      }),
+    );
+    return responses.flat();
   } catch (err) {
     console.warn('[BPNav] USGS fetch failed:', describeError(err));
     return [];
@@ -266,8 +329,14 @@ export function mergeWaterSources(
     }
 
     const props = feature.properties ?? {};
-    const siteId = props.monitoringLocationNumber;
+    // snake_case, as the API returns it. The old camelCase reads produced
+    // undefined, which gave every station the id "usgs-undefined" and the name
+    // "USGS Station", and meant the live-flow lookup below never matched.
+    const siteId = props.monitoring_location_number ?? props.monitoringLocationNumber;
     let reliability = usgsReliability(feature);
+    // Defence in depth: if a response ever carries a type we do not serve
+    // water from, drop it rather than let it through with a zero score.
+    if (reliability === 0 && !USGS_DRINKABLE_SITE_TYPES[usgsSiteType(feature)]) continue;
     let flowDesc = '';
     let seasonalStatus = 'Normal Seasonal Flow';
 
@@ -288,8 +357,8 @@ export function mergeWaterSources(
       id: `usgs-${siteId ?? feature.id}`,
       lat,
       lon,
-      name: props.monitoringLocationName ?? 'USGS Station',
-      description: `USGS monitoring station${flowDesc}`,
+      name: props.monitoring_location_name ?? props.monitoringLocationName ?? 'USGS Station',
+      description: `${usgsSiteLabel(feature)}${flowDesc}`,
       type: 'water',
       source: 'usgs',
       reliability,

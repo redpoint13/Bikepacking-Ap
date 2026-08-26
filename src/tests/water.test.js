@@ -5,6 +5,7 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { parseGPX } from '../gpx.js';
 import {
+  USGS_DRINKABLE_SITE_TYPES,
   fetchOSMWater,
   fetchUSGSFlowData,
   fetchUSGSLocations,
@@ -147,19 +148,37 @@ describe('osmReliability', () => {
 // ---------------------------------------------------------------------------
 
 describe('usgsReliability', () => {
-  it('stream/river type scores 75', () => {
-    const f = { properties: { monitoringLocationType: 'Stream' } };
-    expect(usgsReliability(f)).toBe(75);
+  it('scores a spring above a stream', () => {
+    const spring = { properties: { site_type_code: 'SP' } };
+    const stream = { properties: { site_type_code: 'ST' } };
+    expect(usgsReliability(spring)).toBe(80);
+    expect(usgsReliability(stream)).toBe(70);
+    expect(usgsReliability(spring)).toBeGreaterThan(usgsReliability(stream));
   });
 
-  it('spring type scores 65', () => {
-    const f = { properties: { monitoringLocationType: 'Spring' } };
-    expect(usgsReliability(f)).toBe(65);
+  it('scores ditches and canals below open water', () => {
+    expect(usgsReliability({ properties: { site_type_code: 'ST-DCH' } })).toBe(55);
+    expect(usgsReliability({ properties: { site_type_code: 'ST-CA' } })).toBe(55);
   });
 
-  it('defaults to 60 for unknown type', () => {
-    const f = { properties: {} };
-    expect(usgsReliability(f)).toBe(60);
+  /**
+   * The Colorado Trail corridor returns ~5,100 USGS sites, over half of them
+   * groundwater observation wells, plus atmospheric sensors and facilities —
+   * one of which is a sewage works. These are boreholes and installations, not
+   * water a rider can take. The previous scoring read a field the API does not
+   * return, so every one of them scored 60: above the default reliability
+   * threshold of 50, and therefore offered as a refill.
+   */
+  it('refuses to score undrinkable site types', () => {
+    for (const code of ['GW', 'GW-TH', 'AT', 'FA-SEW', 'FA-DV', 'SB-TSM', 'LA']) {
+      expect(usgsReliability({ properties: { site_type_code: code } })).toBe(0);
+    }
+  });
+
+  it('scores an unknown or absent type as unusable rather than defaulting', () => {
+    expect(usgsReliability({ properties: {} })).toBe(0);
+    expect(usgsReliability({})).toBe(0);
+    expect(usgsReliability({ properties: { site_type_code: 'XX' } })).toBe(0);
   });
 });
 
@@ -180,9 +199,9 @@ describe('mergeWaterSources', () => {
       id: 'site-1',
       geometry: { coordinates: [-111.65, 35.199] },
       properties: {
-        monitoringLocationNumber: '09505200',
-        monitoringLocationName: 'Oak Creek near Flagstaff',
-        monitoringLocationType: 'Stream',
+        monitoring_location_number: '09505200',
+        monitoring_location_name: 'Oak Creek near Flagstaff',
+        site_type_code: 'ST',
       },
     };
     const merged = mergeWaterSources(route, [usgsFeature], []);
@@ -195,9 +214,9 @@ describe('mergeWaterSources', () => {
       id: 'site-dupe',
       geometry: { coordinates: [-111.6537, 35.1989] },
       properties: {
-        monitoringLocationNumber: '09505200',
-        monitoringLocationName: 'Oak Creek (dupe)',
-        monitoringLocationType: 'Stream',
+        monitoring_location_number: '09505200',
+        monitoring_location_name: 'Oak Creek (dupe)',
+        site_type_code: 'ST',
       },
     };
     const merged = mergeWaterSources(route, [usgsFeature], []);
@@ -210,7 +229,7 @@ describe('mergeWaterSources', () => {
     const farFeature = {
       id: 'far-site',
       geometry: { coordinates: [-115.0, 40.0] }, // Nevada
-      properties: { monitoringLocationNumber: '99999', monitoringLocationType: 'Stream' },
+      properties: { monitoring_location_number: '99999', monitoringLocationType: 'Stream' },
     };
     const merged = mergeWaterSources(route, [farFeature], []);
     expect(merged.some((w) => w.id === 'usgs-99999')).toBe(false);
@@ -249,19 +268,35 @@ describe('mergeWaterSources', () => {
 // ---------------------------------------------------------------------------
 
 describe('fetchUSGSLocations', () => {
-  it('returns features on a successful response', async () => {
-    const mockFeatures = [{ id: 'f1', geometry: { coordinates: [0, 0] }, properties: {} }];
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
+  it('queries each drinkable site type and returns the combined features', async () => {
+    // site_type_code accepts one value per request — a comma list returns
+    // nothing — so this issues one request per drinkable type and flattens.
+    const spy = vi.fn(async (url) => {
+      const type = new URL(url).searchParams.get('site_type_code');
+      return {
         ok: true,
-        json: async () => ({ features: mockFeatures }),
-      }),
-    );
+        json: async () => ({
+          features: [{ id: `f-${type}`, geometry: { coordinates: [0, 0] }, properties: {} }],
+        }),
+      };
+    });
+    vi.stubGlobal('fetch', spy);
 
     const bounds = { minLon: -112, minLat: 34, maxLon: -111, maxLat: 36 };
     const result = await fetchUSGSLocations(bounds);
-    expect(result).toEqual(mockFeatures);
+
+    const requested = spy.mock.calls.map((c) => new URL(c[0]).searchParams.get('site_type_code'));
+    expect(new Set(requested)).toEqual(new Set(Object.keys(USGS_DRINKABLE_SITE_TYPES)));
+    expect(result).toHaveLength(Object.keys(USGS_DRINKABLE_SITE_TYPES).length);
+    vi.unstubAllGlobals();
+  });
+
+  it('asks for a limit far above the old 200, which truncated long routes', async () => {
+    const spy = vi.fn(async () => ({ ok: true, json: async () => ({ features: [] }) }));
+    vi.stubGlobal('fetch', spy);
+    await fetchUSGSLocations({ minLon: -112, minLat: 34, maxLon: -111, maxLat: 36 });
+    const limit = Number(new URL(spy.mock.calls[0][0]).searchParams.get('limit'));
+    expect(limit).toBeGreaterThanOrEqual(2000);
     vi.unstubAllGlobals();
   });
 
@@ -351,9 +386,9 @@ describe('mergeWaterSources with flowMap', () => {
     id: 'site-1',
     geometry: { coordinates: [-111.65, 35.199] },
     properties: {
-      monitoringLocationNumber: '09505200',
-      monitoringLocationName: 'Oak Creek near Flagstaff',
-      monitoringLocationType: 'Stream',
+      monitoring_location_number: '09505200',
+      monitoring_location_name: 'Oak Creek near Flagstaff',
+      site_type_code: 'ST',
     },
   };
 
@@ -376,7 +411,7 @@ describe('mergeWaterSources with flowMap', () => {
   it('falls back to static reliability when site is missing from flowMap', () => {
     const merged = mergeWaterSources(route, [usgsFeature], [], new Map());
     const station = merged.find((w) => w.id === 'usgs-09505200');
-    expect(station.reliability).toBe(75); // static stream default
-    expect(station.description).toBe('USGS monitoring station');
+    expect(station.reliability).toBe(70); // ST — stream
+    expect(station.description).toBe('Stream (USGS gauge)');
   });
 });
