@@ -21,7 +21,13 @@ export default defineConfig({
     host: true,
   },
   preview: {
-    port: 5173,
+    // Must NOT share a port with `server` above. Preview serves the built app,
+    // which registers the real Workbox service worker; a service worker controls
+    // its whole origin, and localhost:<port> is the origin. Running preview on
+    // the dev port therefore leaves a worker that serves its precached
+    // production bundle to the dev server afterwards — dev edits stop appearing,
+    // and the only tells are that a different port or a private window works.
+    port: 4173,
     strictPort: true,
   },
   resolve: {
