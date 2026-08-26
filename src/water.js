@@ -260,31 +260,74 @@ export async function fetchUSGSPercentileStats(siteIds) {
   const statsMap = new Map();
   if (siteIds.length === 0) return statsMap;
 
-  const url = `https://waterservices.usgs.gov/nwis/stat/?format=json&sites=${siteIds.join(',')}&statReportType=daily&statType=p10,p25,p50,p75,p90`;
+  // This service does not speak JSON — it answers `format=json` with an HTTP
+  // 400 and an HTML error page reading "unknown format: json", so the previous
+  // request failed on every call and seasonal classification never once ran.
+  // RDB is tab-delimited with a leading block of # comments and a column-type
+  // row beneath the header. It also needs statTypeCd (not statType) and a
+  // parameterCd, both of which were missing.
+  const params = new URLSearchParams({
+    format: 'rdb',
+    sites: siteIds.join(','),
+    statReportType: 'daily',
+    statTypeCd: 'p10,p25,p50,p75,p90',
+    parameterCd: '00060',
+  });
 
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
+    const res = await fetch(`https://waterservices.usgs.gov/nwis/stat/?${params}`, {
+      signal: AbortSignal.timeout(10_000),
+    });
     if (!res.ok) throw new Error(`USGS Stat HTTP ${res.status}`);
-    const data = await res.json();
-    const timeSeries = data.value?.timeSeries ?? [];
-    for (const ts of timeSeries) {
-      const siteId = ts.sourceInfo?.siteCode?.[0]?.value;
-      const values = ts.values?.[0]?.value ?? [];
-      if (siteId && values.length > 0) {
-        const stats = {};
-        for (const v of values) {
-          const val = Number.parseFloat(v.value);
-          const name = (v.qualifiers?.[0] ?? '').toLowerCase();
-          if (name.includes('p10')) stats.p10 = val;
-          if (name.includes('p25')) stats.p25 = val;
-          if (name.includes('p75')) stats.p75 = val;
-          if (name.includes('p90')) stats.p90 = val;
-        }
-        statsMap.set(siteId, stats);
-      }
-    }
+    return parseUSGSPercentileRdb(await res.text());
   } catch (err) {
     console.warn('[BPNav] USGS statistics fetch failed:', describeError(err));
+  }
+
+  return statsMap;
+}
+
+/**
+ * Parses the RDB percentile table into per-site stats for today's date.
+ *
+ * The service returns one row per site per calendar day, so a rider gets the
+ * percentiles that actually apply now rather than an annual average — which is
+ * the whole point of asking: 20 cfs in June and 20 cfs in September mean very
+ * different things about whether a creek is running.
+ *
+ * @param {string} text
+ * @param {Date} [today]
+ * @returns {Map<string, {p10?: number, p25?: number, p50?: number, p75?: number, p90?: number}>}
+ */
+export function parseUSGSPercentileRdb(text, today = new Date()) {
+  const statsMap = new Map();
+  const lines = (text ?? '').split('\n').filter((l) => l && !l.startsWith('#'));
+  if (lines.length < 2) return statsMap;
+
+  const header = lines[0].split('\t');
+  const col = (name) => header.indexOf(name);
+  const iSite = col('site_no');
+  const iMonth = col('month_nu');
+  const iDay = col('day_nu');
+  if (iSite < 0 || iMonth < 0 || iDay < 0) return statsMap;
+
+  const wantMonth = today.getMonth() + 1;
+  const wantDay = today.getDate();
+  const percentiles = ['p10', 'p25', 'p50', 'p75', 'p90'];
+
+  // lines[1] is the column-type row (e.g. "5s\t15s"), not data.
+  for (const line of lines.slice(2)) {
+    const f = line.split('\t');
+    if (Number(f[iMonth]) !== wantMonth || Number(f[iDay]) !== wantDay) continue;
+    const site = f[iSite];
+    if (!site) continue;
+    const stats = {};
+    for (const key of percentiles) {
+      const idx = col(`${key}_va`);
+      const val = idx >= 0 ? Number.parseFloat(f[idx]) : Number.NaN;
+      if (Number.isFinite(val)) stats[key] = val;
+    }
+    if (Object.keys(stats).length > 0) statsMap.set(site, stats);
   }
 
   return statsMap;
