@@ -48,3 +48,24 @@ describe('fetchOverpass', () => {
     expect(new Set(seen).size).toBeGreaterThan(1);
   });
 });
+
+describe('fetchOverpass mirror coverage', () => {
+  it('tries every mirror before giving up', async () => {
+    // The loop ran three attempts over a four-entry list, so the last mirror
+    // was unreachable code. On a network where only that one is reachable —
+    // which is exactly the case this was found on — enrichment could never
+    // succeed at all.
+    const tried = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url) => {
+        tried.push(new URL(url).host);
+        throw new Error('unreachable');
+      }),
+    );
+    await expect(fetchOverpass('[out:json];node(1);out;')).rejects.toThrow();
+    expect(new Set(tried).size).toBeGreaterThanOrEqual(4);
+    expect(tried).toContain('overpass.kumi.systems');
+    vi.unstubAllGlobals();
+  });
+});
