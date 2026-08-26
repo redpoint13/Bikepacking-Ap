@@ -42,10 +42,6 @@ export const PLAN_DEFAULTS = {
   waterSafetyMarginPercent: 20,
   /** Water needed for camp chores, dinner, overnight & morning (oz). */
   campWaterReserveOz: 40,
-  /** Overhead time penalty per water stop (minutes). */
-  stopOverheadMinutes: 15,
-  /** Penalty for carrying 1 oz of water for 1 mile (equivalent to minutes). */
-  waterWeightPenalty: 0.1,
   /** Array of waypoint IDs to explicitly skip. */
   excludedWaterIds: [],
   /** Array of waypoint IDs to explicitly force as stops. */
