@@ -1160,6 +1160,18 @@ svg {
 }
 
 /* parameter inputs container */
+/* The route-start control sits in the same stack as MapLibre's zoom and
+   locate-me buttons, which draw their icons from a sprite we are not part of,
+   so this one renders a glyph instead. */
+.bpnav-ctrl-route-start {
+  font-size: 17px;
+  line-height: 1;
+  color: #333;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* The seven tab buttons cannot shrink below their labels, so the strip forced
    .plan-section -> .planning-view -> .dashboard -> the page itself open to
    ~542px. On a phone that pushed the left edge of every control off screen:

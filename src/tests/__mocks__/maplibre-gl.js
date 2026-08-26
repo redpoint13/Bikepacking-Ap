@@ -5,9 +5,18 @@
  * without needing a WebGL context.
  */
 
-function makeMap() {
+function makeMap(options = {}) {
   const sources = new Map();
   const layers = new Map();
+  const controls = [];
+  // Controls mount into the map's container when one was supplied, else the
+  // document, so querySelector finds them either way.
+  const controlHost = () => {
+    const c = options?.container;
+    if (c instanceof HTMLElement) return c;
+    if (typeof c === 'string') return document.getElementById(c) ?? document.body;
+    return document.body;
+  };
 
   // Call counters so tests can assert that updates diff rather than rebuild.
   const stats = {
@@ -91,7 +100,26 @@ function makeMap() {
       if (layer) layer.paint = { ...layer.paint, [prop]: value };
       return map;
     },
-    addControl: () => map,
+    // Controls are real DOM in the app — the route-start button is our own
+    // element, not a MapLibre sprite icon — so run onAdd and mount what it
+    // returns. Without this a custom control is invisible to tests.
+    addControl: (control) => {
+      if (control && typeof control.onAdd === 'function') {
+        const el = control.onAdd(map);
+        if (el) {
+          controlHost().appendChild(el);
+          controls.push(control);
+        }
+      }
+      return map;
+    },
+    removeControl: (control) => {
+      if (control && typeof control.onRemove === 'function') control.onRemove(map);
+      const i = controls.indexOf(control);
+      if (i >= 0) controls.splice(i, 1);
+      return map;
+    },
+    getControls: () => [...controls],
     fitBounds: () => map,
     flyTo: () => map,
     easeTo: () => map,
