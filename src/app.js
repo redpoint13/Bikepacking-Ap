@@ -475,13 +475,15 @@ export function renderApp(container) {
       <!-- Map section — hidden until a route is loaded -->
       <section class="map-section" id="map-section" aria-label="Route map" hidden style="position: relative;">
         <div id="map" class="map-container"></div>
-        <div class="map-overlay-controls" style="position: absolute; top: 12px; left: 12px; z-index: 10; background: var(--md-sys-color-surface-container, #ffffff); padding: 8px 12px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.3); display: flex; flex-direction: column; gap: 6px; font-size: 11px; font-weight: 600; color: var(--md-sys-color-on-surface, #000000); border: 1px solid var(--md-sys-color-outline-variant);">
-          <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; margin: 0;">
-            <input type="checkbox" id="map-toggle-miles" checked />
-            Mile Markers
+        <div class="map-overlay-controls">
+          <label class="map-overlay-controls__row" title="Mile markers">
+            <input type="checkbox" id="map-toggle-miles" aria-label="Show mile markers" checked />
+            <span class="map-overlay-controls__text">Mile Markers</span>
           </label>
-          <button type="button" id="btn-add-custom-poi" class="btn-add-poi-floating" style="margin-top: 2px;">
-            ＋ Add Waypoint
+          <button type="button" id="btn-add-custom-poi" class="btn-add-poi-floating"
+            aria-label="Add waypoint" title="Add waypoint">
+            <span aria-hidden="true">＋</span>
+            <span class="map-overlay-controls__text">Add Waypoint</span>
           </button>
         </div>
         <div class="route-stats" id="route-stats" aria-label="Route summary"></div>
@@ -616,6 +618,11 @@ export function renderApp(container) {
   `;
 
   wireOfflineIndicator(container);
+  // Publish the starting mode too, not just on switches: the map overlay's
+  // compact rule keys off this attribute, and a container that never announces
+  // its mode would leave that contract half-true.
+  container.dataset.mode = currentMode;
+
   wireEvents(container);
   tryRestoreRoute(container);
 }
@@ -1367,6 +1374,9 @@ function setMode(container, mode) {
  */
 function applyMode(container) {
   const planning = currentMode === 'planning';
+  // CSS hook: the map overlay compacts itself in Riding mode, where the screen
+  // is small (Riding is unreachable above 1024px) and the map matters most.
+  container.dataset.mode = currentMode;
   container.querySelector('#planning-view').hidden = !planning;
   container.querySelector('.resource-section').hidden = planning;
   container.querySelector('.daylight-section').hidden = planning;
