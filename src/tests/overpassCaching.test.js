@@ -2,11 +2,21 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OVERPASS_CLIENT_TIMEOUT_MS, fetchOverpass } from '../gpx.js';
 
 /**
- * The service worker caches Overpass responses so water, camp and resupply data
- * survives a ride out of signal. The Cache API cannot store a response to a POST
- * request, so the request method is what makes that caching work at all — these
- * pin it, since a silent regression to POST would leave the rule inert and only
- * show up in the backcountry.
+ * Overpass must be queried with POST. #13 switched it to GET so the service
+ * worker could cache the responses — the Cache API cannot store a response to a
+ * POST — and that broke enrichment outright: measured back to back on the same
+ * query and endpoint, POST returned HTTP 200 with 1,221 campsites while GET
+ * returned HTTP 429. Overpass rate-limits GET far more aggressively and
+ * documents POST as the interface for real queries.
+ *
+ * Nothing is given up by that. Water, camp and resupply data survives a ride out
+ * of signal through the IndexedDB enrichment cache in storage.js, which is
+ * method-agnostic; there is deliberately no service-worker rule for Overpass,
+ * since with POST it could never match.
+ *
+ * These pin the method, and that the client abort outlasts the server-side
+ * timeout the queries ask for — a regression in either is invisible until a
+ * rider is somewhere without campsites.
  */
 
 afterEach(() => vi.unstubAllGlobals());
