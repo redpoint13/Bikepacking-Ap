@@ -74,6 +74,7 @@ import {
 import { openWaypointEditorModal } from './ui/waypointEditorModal.js';
 import { on, setHTML, setProps, setStyle, setText } from './utils/dom.js';
 import { enrichWaterSources } from './water.js';
+import { annotateWilderness, fetchWildernessAreas } from './wilderness.js';
 
 // ---------------------------------------------------------------------------
 // Module state
@@ -730,6 +731,7 @@ function wireEvents(container) {
         kickoffWaterEnrichment(container, route);
         kickoffCampEnrichment(container, route);
         kickoffResupplyEnrichment(container, route);
+        kickoffWildernessAnnotation(container, route);
       },
       onUploadGPX: async (file) => {
         setLoadingState(container, true);
@@ -777,6 +779,7 @@ function wireEvents(container) {
           kickoffWaterEnrichment(container, route);
           kickoffCampEnrichment(container, route);
           kickoffResupplyEnrichment(container, route);
+          kickoffWildernessAnnotation(container, route);
         } catch (err) {
           showError(container, err);
         } finally {
@@ -800,6 +803,7 @@ function wireEvents(container) {
           kickoffWaterEnrichment(container, route);
           kickoffCampEnrichment(container, route);
           kickoffResupplyEnrichment(container, route);
+          kickoffWildernessAnnotation(container, route);
         } catch (err) {
           showError(container, err);
           throw err;
@@ -877,6 +881,7 @@ function wireEvents(container) {
       kickoffWaterEnrichment(container, route);
       kickoffCampEnrichment(container, route);
       kickoffResupplyEnrichment(container, route);
+      kickoffWildernessAnnotation(container, route);
     } catch (err) {
       console.error('[BPNav] Import failed:', err);
       showError(container, err);
@@ -915,6 +920,7 @@ function wireEvents(container) {
       kickoffWaterEnrichment(container, route);
       kickoffCampEnrichment(container, route);
       kickoffResupplyEnrichment(container, route);
+      kickoffWildernessAnnotation(container, route);
     } catch (err) {
       console.error('[BPNav] Demo load failed:', err);
       showError(container, `Demo load failed: ${describeError(err)}`);
@@ -952,6 +958,7 @@ function wireEvents(container) {
       kickoffWaterEnrichment(container, route);
       kickoffCampEnrichment(container, route);
       kickoffResupplyEnrichment(container, route);
+      kickoffWildernessAnnotation(container, route);
     } catch (err) {
       console.error('[BPNav] URL import failed:', err);
       errEl.textContent = describeError(err);
@@ -1458,6 +1465,7 @@ function applyRoute(container, route, skipEnrichment = false) {
     kickoffWaterEnrichment(container, route);
     kickoffCampEnrichment(container, route);
     kickoffResupplyEnrichment(container, route);
+    kickoffWildernessAnnotation(container, route);
   }
 
   updateStatusChip(container, route);
@@ -1808,6 +1816,7 @@ async function tryRestoreRoute(container) {
           kickoffWaterEnrichment(container, route);
           kickoffCampEnrichment(container, route);
           kickoffResupplyEnrichment(container, route);
+          kickoffWildernessAnnotation(container, route);
           return;
         }
       } catch (_) {}
@@ -1849,6 +1858,7 @@ async function tryRestoreRoute(container) {
     kickoffWaterEnrichment(container, route);
     kickoffCampEnrichment(container, route);
     kickoffResupplyEnrichment(container, route);
+    kickoffWildernessAnnotation(container, route);
   } catch (err) {
     console.warn('[BPNav] Could not restore saved route:', describeError(err));
   }
@@ -1869,6 +1879,7 @@ async function kickoffWaterEnrichment(container, route) {
       ...route.waypoints.filter((w) => w.type !== 'water' || w.id.startsWith('user-')),
       ...enrichedWater,
     ].sort((a, b) => a.distanceFromStartMi - b.distanceFromStartMi);
+    annotateWilderness(route, route.wildernessAreas ?? []);
     markWaypointsChanged(route);
 
     updateResourceCards(container, route);
@@ -1896,6 +1907,7 @@ async function kickoffCampEnrichment(container, route) {
       ...route.waypoints.filter((w) => w.type !== 'camping' || w.id.startsWith('user-')),
       ...enrichedCamps,
     ].sort((a, b) => a.distanceFromStartMi - b.distanceFromStartMi);
+    annotateWilderness(route, route.wildernessAreas ?? []);
     markWaypointsChanged(route);
 
     updateResourceCards(container, route);
@@ -1923,6 +1935,7 @@ async function kickoffResupplyEnrichment(container, route) {
       ...route.waypoints.filter((w) => w.type !== 'resupply' || w.id.startsWith('user-')),
       ...enrichedResupply,
     ].sort((a, b) => a.distanceFromStartMi - b.distanceFromStartMi);
+    annotateWilderness(route, route.wildernessAreas ?? []);
     markWaypointsChanged(route);
 
     updateResourceCards(container, route);
@@ -1932,6 +1945,41 @@ async function kickoffResupplyEnrichment(container, route) {
     saveEnrichment(route.waypoints).catch(() => {});
   } catch (err) {
     console.warn('[BPNav] Resupply enrichment failed:', describeError(err));
+  }
+}
+
+/**
+ * Fetches designated Wilderness boundaries and flags every waypoint inside one.
+ *
+ * Bicycles are barred from Wilderness Areas, so a camp or water source in one
+ * cannot be part of a plan however good it looks. Flagged waypoints stay on the
+ * map — seeing that a boundary is there matters — but planning skips them.
+ *
+ * @param {HTMLElement} container
+ * @param {import('./gpx.js').RouteContext} route
+ */
+async function kickoffWildernessAnnotation(container, route) {
+  try {
+    const areas = await fetchWildernessAreas(route.bounds);
+    if (!areas.length) return;
+    route.wildernessAreas = areas;
+    const { flagged, cleared, changed } = annotateWilderness(route, areas);
+    const clearedNote = cleared ? `, ${cleared} no longer off-limits` : '';
+    console.info(
+      `[BPNav] ${areas.length} wilderness area(s) on this route; ${flagged} waypoint(s) off-limits to bikes${clearedNote}.`,
+    );
+    // Guard on any change, not just new flags. Clearing a stale exclusion is an
+    // in-place edit too, and skipping the refresh there left the memoized plan
+    // still excluding waypoints the boundaries no longer cover.
+    if (!changed) return;
+    markWaypointsChanged(route);
+    updateResourceCards(container, route);
+    updatePlanningView(container.querySelector('#planning-view'), route, planOptions);
+    updateRouteStats(container, route, planOptions);
+    syncMapState();
+    saveEnrichment(route.waypoints).catch(() => {});
+  } catch (err) {
+    console.warn('[BPNav] Wilderness annotation failed:', describeError(err));
   }
 }
 

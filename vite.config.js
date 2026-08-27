@@ -107,6 +107,19 @@ export default defineConfig({
               cacheableResponse: { statuses: [0, 200] },
             },
           },
+          // Designated Wilderness boundaries. Bikes are barred from these, so a
+          // rider needs the answer out of signal as much as in it — and the
+          // polygons only change when Congress designates a new area.
+          {
+            urlPattern: /^https:\/\/apps\.fs\.usda\.gov\/.*/i,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'wilderness-boundaries',
+              networkTimeoutSeconds: 15,
+              expiration: { maxAgeSeconds: 60 * 60 * 24 * 365, maxEntries: 100 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
           // Weather, elevation fallback and BLM land ownership. None were cached,
           // so all three simply failed once out of signal. They are advisory
           // rather than safety-critical, but a stale forecast still beats none.

@@ -138,7 +138,24 @@ function resourceWaypoints(route) {
   const total = route.totalDistanceMiles ?? 0;
   return [...route.waypoints]
     .filter((w) => w.distanceFromStartMi >= -0.01 && w.distanceFromStartMi <= total + 0.01)
+    .filter(isBikeReachable)
     .sort((a, b) => a.distanceFromStartMi - b.distanceFromStartMi);
+}
+
+/**
+ * Whether a rider may legally reach a waypoint by bike.
+ *
+ * Bicycles are barred from designated Wilderness Areas, so a camp or water
+ * source inside one cannot be part of a plan however good it looks — this is
+ * separate from whether dispersed camping is allowed, since a Wilderness sits
+ * inside land that otherwise permits it. Waypoints are only flagged once the
+ * boundary data has loaded; until then nothing is excluded.
+ *
+ * @param {import('./gpx.js').Waypoint} wp
+ * @returns {boolean}
+ */
+export function isBikeReachable(wp) {
+  return wp?.bikeAccessible !== false;
 }
 
 const round1 = (n) => Number(n.toFixed(1));
@@ -1097,9 +1114,11 @@ export function getActiveStopIds(route, opts) {
   }
 
   const total = route.totalDistanceMiles ?? 0;
-  const waypoints = [...route.waypoints].sort(
-    (a, b) => a.distanceFromStartMi - b.distanceFromStartMi,
-  );
+  // Same wilderness exclusion as resourceWaypoints: a stop a bike cannot
+  // legally reach must never become an active stop either.
+  const waypoints = [...route.waypoints]
+    .filter(isBikeReachable)
+    .sort((a, b) => a.distanceFromStartMi - b.distanceFromStartMi);
 
   const excludedWater = new Set(opts.excludedWaterIds);
   const forcedWater = new Set(opts.forcedWaterIds);
