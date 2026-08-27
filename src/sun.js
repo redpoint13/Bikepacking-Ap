@@ -53,9 +53,13 @@ export function calculateDaylightBuffer(
   const hoursNeeded = remainingMiles / clampedPace;
 
   // Find the coordinate of the destination to get the local sunset
-  const trackPoints = route.trackPoints;
-  let destLat = route.startPoint.lat;
-  let destLon = route.startPoint.lon;
+  const trackPoints = route.trackPoints ?? [];
+  // Defensive: a route assembled outside parseGPX may not carry startPoint, and
+  // an unguarded read here took down the whole apply — see utils/dom.js for why
+  // this file never dereferences blindly.
+  let destLat = route.startPoint?.lat ?? trackPoints[0]?.[0];
+  let destLon = route.startPoint?.lon ?? trackPoints[0]?.[1];
+  if (!Number.isFinite(destLat) || !Number.isFinite(destLon)) return null;
 
   if (trackPoints.length > 0) {
     // Snap targetEndMile to a track point index

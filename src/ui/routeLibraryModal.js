@@ -233,8 +233,11 @@ export async function openRouteLibraryModal({ onSelectRoute, onUploadGPX, onImpo
       urlSubmit.disabled = true;
       urlSubmit.textContent = 'Importing...';
       try {
+        // Read before closing: closeRouteLibraryModal removes the checkbox from
+        // the DOM, so reading it afterwards always returns false.
+        const keep = keepWaypoints();
         closeRouteLibraryModal();
-        await onImportURL(url, { keepWaypoints: keepWaypoints() });
+        await onImportURL(url, { keepWaypoints: keep });
       } catch (err) {
         alert(`Failed to import: ${describeError(err)}`);
       } finally {

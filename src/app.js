@@ -785,13 +785,7 @@ function wireEvents(container) {
           await setActiveRouteId(routeId);
           applyRoute(container, route, Boolean(carry));
           if (carry) {
-            const droppedNote = carry.dropped
-              ? `; dropped ${carry.dropped} now more than 1.5 mi off it.`
-              : '. Nothing was off-route.';
-            const plural = carry.kept === 1 ? '' : 's';
-            const note = `Kept ${carry.kept} waypoint${plural} on the new route${droppedNote}`;
-            console.info(`[BPNav] ${note}`);
-            showNotice(container, note);
+            showNotice(container, describeCarry(carry));
           } else {
             kickoffWaterEnrichment(container, route);
             kickoffCampEnrichment(container, route);
@@ -804,8 +798,12 @@ function wireEvents(container) {
           setLoadingState(container, false);
         }
       },
-      onImportURL: async (url) => {
+      onImportURL: async (url, { keepWaypoints = false } = {}) => {
         setLoadingState(container, true);
+        // Captured before the imported route replaces currentRoute. The
+        // checkbox sits above every import control, so it has to mean the same
+        // thing here as it does for a GPX upload.
+        const carriedOver = keepWaypoints ? (currentRoute?.waypoints ?? []) : null;
         try {
           const route = await importFromURL(url);
           const gpxStub = `<gpx version="1.1" creator="BPNav"><trk><name>${route.name}</name><trkseg>${route.trackPoints.map(([lat, lon]) => `<trkpt lat="${lat}" lon="${lon}"/>`).join('')}</trkseg></trk></gpx>`;
@@ -817,11 +815,16 @@ function wireEvents(container) {
             waypoints: route.waypoints || [],
           });
           await setActiveRouteId(routeId);
-          applyRoute(container, route);
-          kickoffWaterEnrichment(container, route);
-          kickoffCampEnrichment(container, route);
-          kickoffResupplyEnrichment(container, route);
-          kickoffWildernessAnnotation(container, route);
+          const carry = carriedOver?.length ? carryWaypointsOnto(route, carriedOver) : null;
+          applyRoute(container, route, Boolean(carry));
+          if (carry) {
+            showNotice(container, describeCarry(carry));
+          } else {
+            kickoffWaterEnrichment(container, route);
+            kickoffCampEnrichment(container, route);
+            kickoffResupplyEnrichment(container, route);
+            kickoffWildernessAnnotation(container, route);
+          }
         } catch (err) {
           showError(container, err);
           throw err;
@@ -1784,7 +1787,6 @@ function setLoadingState(container, loading) {
   setText(fab, '.fab-label', loading ? 'Parsing…' : currentRoute ? 'Change Route' : 'Load Route');
 }
 
-/** @param {HTMLElement} container @param {string} message */
 /**
  * Reports something that went right but changed the plan, so the rider is not
  * left guessing why the map looks different. Same lifetime and placement as
@@ -1808,6 +1810,7 @@ function showNotice(container, message) {
   setTimeout(() => note.remove(), 8000);
 }
 
+/** @param {HTMLElement} container @param {string} message */
 function showError(container, message) {
   if (!container) return;
   // Remove any previous error
@@ -1990,15 +1993,22 @@ async function kickoffResupplyEnrichment(container, route) {
 }
 
 /**
- * Fetches designated Wilderness boundaries and flags every waypoint inside one.
+ * Wording for a waypoint carry, shared by both import paths so they cannot
+ * drift into describing the same operation differently.
  *
- * Bicycles are barred from Wilderness Areas, so a camp or water source in one
- * cannot be part of a plan however good it looks. Flagged waypoints stay on the
- * map — seeing that a boundary is there matters — but planning skips them.
- *
- * @param {HTMLElement} container
- * @param {import('./gpx.js').RouteContext} route
+ * @param {{kept: number, dropped: number}} carry
+ * @returns {string}
  */
+function describeCarry(carry) {
+  const droppedNote = carry.dropped
+    ? `; dropped ${carry.dropped} now more than 1.5 mi off it.`
+    : '. Nothing was off-route.';
+  const plural = carry.kept === 1 ? '' : 's';
+  const note = `Kept ${carry.kept} waypoint${plural} on the new route${droppedNote}`;
+  console.info(`[BPNav] ${note}`);
+  return note;
+}
+
 /**
  * Carries the current route's waypoints onto a newly loaded track.
  *
@@ -2023,6 +2033,16 @@ function carryWaypointsOnto(route, previous) {
   return { kept: kept.length, dropped: dropped.length };
 }
 
+/**
+ * Fetches designated Wilderness boundaries and flags every waypoint inside one.
+ *
+ * Bicycles are barred from Wilderness Areas, so a camp or water source in one
+ * cannot be part of a plan however good it looks. Flagged waypoints stay on the
+ * map — seeing that a boundary is there matters — but planning skips them.
+ *
+ * @param {HTMLElement} container
+ * @param {import('./gpx.js').RouteContext} route
+ */
 async function kickoffWildernessAnnotation(container, route) {
   try {
     const areas = await fetchWildernessAreas(route.bounds);
