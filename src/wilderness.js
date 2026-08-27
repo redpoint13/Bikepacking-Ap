@@ -139,30 +139,50 @@ export function wildernessAt(lat, lon, areas) {
 }
 
 /**
- * Marks every waypoint that sits inside a Wilderness Area.
+ * Marks every waypoint that sits inside a Wilderness Area, and unmarks any that
+ * is no longer inside one.
  *
  * Sets `wilderness` to the area's name and `bikeAccessible` to false. Planning
  * reads bikeAccessible, so a flagged waypoint is never chosen as a stop or a
  * camp — it stays visible on the map, because knowing a Wilderness boundary is
  * there matters, but it stops being somewhere the plan sends you.
  *
+ * Reports flags cleared as well as flags set. Both are in-place edits, so both
+ * need markWaypointsChanged afterwards or the memoized plan keeps the old
+ * answer — and a pass that only clears is exactly the case a caller counting
+ * "how many are inside" would miss. That happens on restore: waypoints cached
+ * with bikeAccessible false are excluded from planning, and if the boundaries
+ * no longer contain them, nothing else would invalidate the memo.
+ *
+ * With no boundary data it changes nothing rather than clearing: a failed or
+ * pending fetch is not evidence that a cached exclusion was wrong.
+ *
  * @param {import('./gpx.js').RouteContext} route
  * @param {Array<{name: string, rings: number[][][]}>} areas
- * @returns {number} how many waypoints were flagged
+ * @returns {{flagged: number, cleared: number, changed: number}}
  */
 export function annotateWilderness(route, areas) {
-  if (!route?.waypoints?.length || !areas?.length) return 0;
+  if (!route?.waypoints?.length || !areas?.length) {
+    return { flagged: 0, cleared: 0, changed: 0 };
+  }
   let flagged = 0;
+  let cleared = 0;
+  let changed = 0;
   for (const wp of route.waypoints) {
     const name = wildernessAt(wp.lat, wp.lon, areas);
     if (name) {
+      // `changed` counts real mutations, so re-running against unchanged
+      // boundaries does not churn the plan memo and the map for nothing.
+      if (wp.wilderness !== name || wp.bikeAccessible !== false) changed++;
       wp.wilderness = name;
       wp.bikeAccessible = false;
       flagged++;
-    } else if (wp.wilderness) {
+    } else if (wp.wilderness || wp.bikeAccessible === false) {
       wp.wilderness = undefined;
       wp.bikeAccessible = true;
+      cleared++;
+      changed++;
     }
   }
-  return flagged;
+  return { flagged, cleared, changed };
 }

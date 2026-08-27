@@ -1963,11 +1963,16 @@ async function kickoffWildernessAnnotation(container, route) {
     const areas = await fetchWildernessAreas(route.bounds);
     if (!areas.length) return;
     route.wildernessAreas = areas;
-    const flagged = annotateWilderness(route, areas);
+    const { flagged, cleared, changed } = annotateWilderness(route, areas);
     console.info(
-      `[BPNav] ${areas.length} wilderness area(s) on this route; ${flagged} waypoint(s) are off-limits to bikes.`,
+      `[BPNav] ${areas.length} wilderness area(s) on this route; ${flagged} waypoint(s) off-limits to bikes` +
+        (cleared ? `, ${cleared} no longer off-limits` : '') +
+        '.',
     );
-    if (!flagged) return;
+    // Guard on any change, not just new flags. Clearing a stale exclusion is an
+    // in-place edit too, and skipping the refresh there left the memoized plan
+    // still excluding waypoints the boundaries no longer cover.
+    if (!changed) return;
     markWaypointsChanged(route);
     updateResourceCards(container, route);
     updatePlanningView(container.querySelector('#planning-view'), route, planOptions);

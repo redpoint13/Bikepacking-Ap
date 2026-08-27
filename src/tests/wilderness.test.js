@@ -83,7 +83,7 @@ describe('annotateWilderness', () => {
 
   it('flags only the waypoints inside a wilderness', () => {
     const route = makeRoute();
-    expect(annotateWilderness(route, AREAS)).toBe(1);
+    expect(annotateWilderness(route, AREAS)).toMatchObject({ flagged: 1, cleared: 0 });
     expect(route.waypoints[0].wilderness).toBe('Lost Creek Wilderness');
     expect(route.waypoints[0].bikeAccessible).toBe(false);
     expect(route.waypoints[1].bikeAccessible).not.toBe(false);
@@ -100,7 +100,7 @@ describe('annotateWilderness', () => {
 
   it('does nothing when no boundaries loaded, rather than excluding everything', () => {
     const route = makeRoute();
-    expect(annotateWilderness(route, [])).toBe(0);
+    expect(annotateWilderness(route, [])).toMatchObject({ flagged: 0, cleared: 0, changed: 0 });
     expect(route.waypoints.every((w) => w.bikeAccessible !== false)).toBe(true);
   });
 });
@@ -192,5 +192,54 @@ describe('readWildernessName', () => {
     expect(readWildernessName({})).toBe('Wilderness Area');
     expect(readWildernessName({ wildernessname: '   ' })).toBe('Wilderness Area');
     expect(readWildernessName(null)).toBe('Wilderness Area');
+  });
+});
+
+describe('annotateWilderness reports clears, not just flags', () => {
+  /**
+   * On restore, waypoints cached with bikeAccessible false are applied and
+   * excluded from planning. If the boundaries no longer contain them the flags
+   * are cleared in place — an in-place edit, invisible to the plan memo. A
+   * caller counting only "how many are inside" would see zero and skip
+   * markWaypointsChanged, leaving the plan still excluding them.
+   */
+  it('counts a pass that only clears stale flags as a change', () => {
+    const route = {
+      waypoints: [
+        // Cached as off-limits, but sits well outside the boundary now.
+        { id: 'stale', lat: 38.0, lon: -107.0, wilderness: 'Somewhere', bikeAccessible: false },
+      ],
+    };
+    const result = annotateWilderness(route, AREAS);
+    expect(result.flagged).toBe(0);
+    expect(result.cleared).toBe(1);
+    expect(result.changed).toBe(1); // the caller's refresh guard keys off this
+    expect(route.waypoints[0].bikeAccessible).toBe(true);
+    expect(route.waypoints[0].wilderness).toBeUndefined();
+  });
+
+  it('reports no change when boundaries have not moved, so nothing churns', () => {
+    const route = {
+      waypoints: [
+        {
+          id: 'in',
+          lat: 39.2,
+          lon: -105.8,
+          wilderness: 'Lost Creek Wilderness',
+          bikeAccessible: false,
+        },
+        { id: 'out', lat: 38.0, lon: -107.0 },
+      ],
+    };
+    const result = annotateWilderness(route, AREAS);
+    expect(result.flagged).toBe(1);
+    expect(result.changed).toBe(0);
+  });
+
+  it('leaves a cached exclusion alone when no boundaries loaded', () => {
+    // A failed or pending fetch is not evidence the cached exclusion was wrong.
+    const route = { waypoints: [{ id: 'x', lat: 39.2, lon: -105.8, bikeAccessible: false }] };
+    expect(annotateWilderness(route, []).changed).toBe(0);
+    expect(route.waypoints[0].bikeAccessible).toBe(false);
   });
 });
