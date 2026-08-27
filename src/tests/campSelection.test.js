@@ -184,3 +184,101 @@ describe('the last-resort fallback honours legality too', () => {
     expect(days[0].chosen.campId).toBe('only-and-legal');
   });
 });
+
+describe('synthetic camp water proximity recommendation', () => {
+  const opts = { ...PLAN_DEFAULTS, targetDailyMiles: 40 };
+
+  it("reports reliable water near the target as data, named by the camp's own mile", () => {
+    const route = makeRoute([
+      {
+        id: 'water-spring-39',
+        name: 'Cascade Spring',
+        type: 'water',
+        distanceFromStartMi: 39.5,
+        lat: 37.74,
+        lon: -107.85,
+        reliability: 90,
+      },
+    ]);
+    const days = buildDayPlan(route, opts);
+    // The camp is at its target mile, so that is what it is named for; the
+    // water's mile is carried separately rather than encoded in the label.
+    expect(days[0].chosen.campWaterName).toBe('Cascade Spring');
+    expect(days[0].chosen.campWaterMi).toBe(39.5);
+    expect(days[0].chosen.campName).toContain(days[0].chosen.endMi.toFixed(1));
+    expect(days[0].chosen.campName).not.toContain('39.5');
+  });
+
+  it('falls back to no known site when no water is near target mileage', () => {
+    const route = makeRoute([
+      {
+        id: 'water-spring-10',
+        name: 'Far Spring',
+        type: 'water',
+        distanceFromStartMi: 10,
+        lat: 37.74,
+        lon: -107.85,
+        reliability: 90,
+      },
+    ]);
+    const days = buildDayPlan(route, opts);
+    expect(days[0].chosen.campName).toMatch(/Target mi 40.0 — no known site/);
+  });
+
+  it('prefers water already passed over nearer water beyond camp', () => {
+    // Behind camp you fill a bottle and carry it the last mile; beyond camp you
+    // arrive dry and have to ride on. The source ahead is the nearer of the two
+    // (0.8 mi vs 1.0), so ranking on absolute distance would choose it.
+    const route = makeRoute([
+      {
+        id: 'water-ahead',
+        name: 'Ahead Creek',
+        type: 'water',
+        distanceFromStartMi: 40.8,
+        lat: 37.74,
+        lon: -107.85,
+        reliability: 90,
+      },
+      {
+        id: 'water-behind',
+        name: 'Behind Creek',
+        type: 'water',
+        distanceFromStartMi: 39,
+        lat: 37.74,
+        lon: -107.85,
+        reliability: 90,
+      },
+    ]);
+    const days = buildDayPlan(route, opts);
+    expect(days[0].chosen.campWaterName).toBe('Behind Creek');
+  });
+
+  it("describes the camp by its own mile and the water's offset and direction", () => {
+    const route = makeRoute([
+      {
+        id: 'water-ahead',
+        name: 'Ahead Creek',
+        type: 'water',
+        distanceFromStartMi: 41,
+        lat: 37.74,
+        lon: -107.85,
+        reliability: 90,
+      },
+    ]);
+    const wpts = getWaypointsWithSyntheticCamps(route, opts);
+    const synth = wpts.find((w) => w.isSynthetic);
+    expect(synth.distanceFromStartMi).toBe(40);
+    expect(synth.description).toContain('near mile 40');
+    expect(synth.description).toContain('Ahead Creek at mile 41');
+    expect(synth.description).toContain('1 mi further on');
+    // Still says plainly that no site is known -- the water does not upgrade it.
+    expect(synth.description).toContain('No campsite is known');
+  });
+
+  it('leaves the description free of water wording when there is none nearby', () => {
+    const route = makeRoute([]);
+    const synth = getWaypointsWithSyntheticCamps(route, opts).find((w) => w.isSynthetic);
+    expect(synth.description).toContain('No campsite is known');
+    expect(synth.description).not.toContain('Nearest reliable water');
+  });
+});

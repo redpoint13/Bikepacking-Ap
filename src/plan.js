@@ -800,12 +800,51 @@ function pickCampNear(camps, afterMi, targetMi, windowLo, windowHi) {
  *
  * @typedef {Object} DayOption
  * @property {string} campName
+ * @property {string|null} campWaterName - nearest reliable water to this camp
+ * @property {number|null} campWaterMi   - that water's mile, not the camp's
  * @property {number} endMi
  * @property {number} miles
  * @property {number|null} nextWaterMi   - miles from camp to next reliable water
  * @property {number|null} nextFoodMi    - miles from camp to next resupply
  * @property {boolean} isFinish
  */
+/** How far from a day's target a water source can be and still be worth naming. */
+const CAMP_WATER_RADIUS_MI = 2.5;
+
+/**
+ * Ranks water for a camp at `targetMi`. Water past camp counts double, because
+ * reaching camp dry is worse than carrying a bottle the last mile.
+ * @param {import('./gpx.js').Waypoint} w
+ * @param {number} targetMi
+ * @returns {number}
+ */
+function campWaterCost(w, targetMi) {
+  const delta = w.distanceFromStartMi - targetMi;
+  return delta <= 0 ? -delta : delta * 2;
+}
+
+/**
+ * Describes a synthetic camp: where it is, that it is not a known site, and
+ * what water is near it.
+ * @param {{endMi: number, campWaterName: string|null, campWaterMi: number|null}} chosen
+ * @param {number} day
+ * @returns {string}
+ */
+function describeSyntheticCamp(chosen, day) {
+  const base = `No campsite is known near mile ${round1(chosen.endMi)}. This is simply where Day ${day} reaches your target distance — you will need to find a spot. Check the land is open to camping before you rely on it.`;
+  if (chosen.campWaterMi == null) return base;
+
+  const delta = round1(chosen.campWaterMi - chosen.endMi);
+  const where =
+    Math.abs(delta) < 0.1
+      ? 'at camp'
+      : delta < 0
+        ? `${Math.abs(delta)} mi back`
+        : `${delta} mi further on`;
+  const source = chosen.campWaterName || 'an unnamed source';
+  return `${base} Nearest reliable water is ${source} at mile ${round1(chosen.campWaterMi)}, ${where}. Pitch at least 200 ft from it.`;
+}
+
 export function buildDayPlan(route, opts = {}) {
   const o = resolveOptions(opts, resourceWaypoints(route));
   const total = route.totalDistanceMiles ?? 0;
@@ -983,13 +1022,34 @@ export function buildDayPlan(route, opts = {}) {
         surfaceFactor: o.surfaceFactor,
       });
 
+      // Reliable water the rider could use at this camp, reported so they can
+      // judge it. Water already passed beats water beyond camp: behind you it
+      // means filling up and carrying the last stretch, ahead it means arriving
+      // dry and riding on, so a source past the target is ranked at double its
+      // distance rather than excluded.
+      const nearbyWater = waypoints
+        .filter(
+          (w) =>
+            w.type === 'water' &&
+            isReliableWater(w, o.reliableWaterThreshold) &&
+            w.distanceFromStartMi > startMi + 0.2 &&
+            Math.abs(w.distanceFromStartMi - targetMi) <= CAMP_WATER_RADIUS_MI,
+        )
+        .sort((a, b) => campWaterCost(a, targetMi) - campWaterCost(b, targetMi))[0];
+
+      // Named for where it is, not for the water. The camp sits at targetMi;
+      // the water may be up to CAMP_WATER_RADIUS_MI away, so naming it after
+      // the water's mile labelled the marker with a mile it is not at.
+      const campName = `Target mi ${targetMi.toFixed(1)} — no known site`;
+
       return {
         campId,
-        // Named for what it is. "Dispersed Camp" read like a found site; this
-        // is the mile the day happens to end at. The legacy string is still
-        // matched by the synthetic-waypoint strippers in export/storage/app so
-        // plans saved under the old name keep being filtered correctly.
-        campName: `Target mi ${targetMi.toFixed(1)} — no known site`,
+        campName,
+        // Structured, so the description does not have to read it back out of
+        // campName. Branching on display text meant rewording the label would
+        // silently change which description a camp got.
+        campWaterName: nearbyWater?.name ?? null,
+        campWaterMi: nearbyWater?.distanceFromStartMi ?? null,
         endMi: targetMi,
         miles: round1(targetMi - startMi),
         nextWaterMi: waterInfo ? waterInfo.miles : null,
@@ -1384,7 +1444,7 @@ export function getWaypointsWithSyntheticCamps(route, opts) {
           lat: pt[0],
           lon: pt[1],
           distanceFromStartMi: chosen.endMi,
-          description: `No campsite is known near mile ${round1(chosen.endMi)}. This is simply where Day ${d.day} reaches your target distance — you will need to find a spot. Check the land is open to camping before you rely on it.`,
+          description: describeSyntheticCamp(chosen, d.day),
           // Deliberately null, not 100. This is a point on a line, not a site:
           // nothing is known about whether it is flat, sheltered, legal or even
           // campable. A score of 100 made the least-informed markers on the map

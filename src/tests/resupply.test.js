@@ -337,6 +337,21 @@ describe('mergeResupplySources', () => {
     expect(atLeadville).toHaveLength(1);
     expect(atLeadville[0].source).not.toBe('curated');
   });
+
+  it('all curated resupply sources have unique IDs and distinct town coordinates', () => {
+    const ids = new Set();
+    for (const r of CURATED_RESUPPLY_SOURCES) {
+      expect(ids.has(r.id)).toBe(false);
+      ids.add(r.id);
+    }
+
+    const stageStop = CURATED_RESUPPLY_SOURCES.find((r) => r.id === 'ct-resupply-stage-stop');
+    const jefferson = CURATED_RESUPPLY_SOURCES.find((r) => r.id === 'ct-resupply-jefferson');
+    expect(stageStop).toBeDefined();
+    expect(jefferson).toBeDefined();
+    expect(stageStop.lat).not.toBe(jefferson.lat);
+    expect(stageStop.lon).not.toBe(jefferson.lon);
+  });
 });
 
 // ---------------------------------------------------------------------------

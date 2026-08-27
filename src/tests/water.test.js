@@ -5,6 +5,7 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { haversineDistance, parseGPX } from '../gpx.js';
 import {
+  CURATED_WATER_SOURCES,
   USGS_DRINKABLE_SITE_TYPES,
   fetchOSMWater,
   fetchUSGSFlowData,
@@ -306,6 +307,14 @@ describe('mergeWaterSources', () => {
       (w) => haversineDistance(w.lat, w.lon, 37.74381, -107.85056) < 0.05,
     );
     expect(matches).toHaveLength(1);
+  });
+
+  it('all curated water sources have unique IDs', () => {
+    const ids = new Set();
+    for (const w of CURATED_WATER_SOURCES) {
+      expect(ids.has(w.id)).toBe(false);
+      ids.add(w.id);
+    }
   });
 });
 
