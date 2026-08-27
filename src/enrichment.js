@@ -8,6 +8,7 @@
  */
 
 import { osmCampFee, osmCampWater } from './camp.js';
+import { rebaseWaypointsOntoTrack } from './gpx.js';
 
 /**
  * 4-Tier Resupply Categories:
@@ -165,4 +166,28 @@ export function enrichWaypointMetadata(wp) {
     notes: wp.notes || '',
     stopState: wp.stopState || 'optional', // 'planned' | 'optional' | 'skipped'
   };
+}
+
+/**
+ * Fills in `distanceFromStartMi` and `offCourseDistanceMi` on enrichment output.
+ *
+ * The enrichment modules (`water.js`, `camp.js`, `resupply.js`) set neither
+ * field, and every consumer reads it as `wp.offCourseDistanceMi || 0`. An unset
+ * field therefore means "on the route, no detour": `maxDetourMi` never filters
+ * an enriched source, the off-track tests in `plan.js` always pass, the map's
+ * off-course badge never appears, and the detour is missing from day mileage
+ * and time.
+ *
+ * Nothing is dropped here. Each module already applies its own proximity gate
+ * (`isNearRoute`), and re-filtering on a threshold that does not match it would
+ * discard sources those modules deliberately kept -- including waypoints that
+ * came from the rider's own GPX, which may sit well off the line on purpose.
+ * @param {import('./gpx.js').Waypoint[]} waypoints
+ * @param {Array<[number, number, number]>} trackPoints
+ * @returns {import('./gpx.js').Waypoint[]}
+ */
+export function withRouteDistances(waypoints, trackPoints) {
+  return rebaseWaypointsOntoTrack(waypoints, trackPoints, {
+    maxOffCourseMi: Number.POSITIVE_INFINITY,
+  }).kept;
 }

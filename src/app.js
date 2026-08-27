@@ -8,6 +8,7 @@
 import { searchOSMResources } from './api.js';
 import { generateStatusReport, isVoiceEnabled, setVoiceEnabled, speak } from './audio.js';
 import { enrichCampSources } from './camp.js';
+import { withRouteDistances } from './enrichment.js';
 import { describeError } from './errorBoundary.js';
 import { GPSManager } from './gps.js';
 import {
@@ -1939,7 +1940,7 @@ async function tryRestoreRoute(container) {
  */
 async function kickoffWaterEnrichment(container, route) {
   try {
-    const enrichedWater = await enrichWaterSources(route);
+    const enrichedWater = withRouteDistances(await enrichWaterSources(route), route.trackPoints);
     if (!enrichedWater.length) return;
 
     route.waypoints = [
@@ -1967,7 +1968,7 @@ async function kickoffWaterEnrichment(container, route) {
  */
 async function kickoffCampEnrichment(container, route) {
   try {
-    const enrichedCamps = await enrichCampSources(route);
+    const enrichedCamps = withRouteDistances(await enrichCampSources(route), route.trackPoints);
     if (!enrichedCamps.length) return;
 
     route.waypoints = [
@@ -1995,7 +1996,10 @@ async function kickoffCampEnrichment(container, route) {
  */
 async function kickoffResupplyEnrichment(container, route) {
   try {
-    const enrichedResupply = await enrichResupplySources(route);
+    const enrichedResupply = withRouteDistances(
+      await enrichResupplySources(route),
+      route.trackPoints,
+    );
     if (!enrichedResupply.length) return;
 
     route.waypoints = [

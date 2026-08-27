@@ -1,8 +1,13 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { mergeCampSources } from '../camp.js';
 import { generateStopChecklists } from '../checklist.js';
+import { withRouteDistances } from '../enrichment.js';
 import { generateGPX } from '../export.js';
 import { PLAN_DEFAULTS, buildPlan, computeFoodCarry } from '../plan.js';
 import { mergeResupplySources } from '../resupply.js';
+import { mergeWaterSources } from '../water.js';
 
 /**
  * "One module sets a field, another reads a different name" is the dominant
@@ -117,5 +122,77 @@ describe('checklist reads the water field that exists', () => {
     const plan = buildPlan(route, { ...PLAN_DEFAULTS });
     const lists = generateStopChecklists(route, plan);
     expect(Array.isArray(lists)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Enrichment output → every consumer of offCourseDistanceMi
+// ---------------------------------------------------------------------------
+
+/**
+ * water.js, camp.js and resupply.js set `distanceFromStartMi` but never
+ * `offCourseDistanceMi`, while ~20 consumers read it as
+ * `wp.offCourseDistanceMi || 0`. An unset field therefore reads as "on the
+ * route, no detour": maxDetourMi stops filtering, the map's off-course badge
+ * never shows, and the detour is missing from day mileage and time.
+ */
+describe('enrichment output carries its own detour distance', () => {
+  const OFF_ROUTE_MI = 1.2;
+  // isNearRoute measures to sampled track points (every 20th, ~2.8 mi apart
+  // here), so anchor to one -- i=40 -> lat 39.08. Off a sample, a source 1.2 mi
+  // from the line can measure 1.8 mi and fall outside the 1.5 mi gate.
+  const LAT = 39.08;
+  const dLon = OFF_ROUTE_MI / (69 * Math.cos((LAT * Math.PI) / 180));
+
+  const cases = [
+    ['water', mergeWaterSources, { amenity: 'drinking_water' }, 'osm-42'],
+    ['camping', mergeCampSources, { tourism: 'camp_site' }, 'osm-camp-42'],
+    ['resupply', mergeResupplySources, { shop: 'supermarket' }, 'osm-resupply-42'],
+  ];
+
+  for (const [label, merge, tags, id] of cases) {
+    it(`${label}: the merge leaves it unset, and withRouteDistances supplies it`, () => {
+      const route = routeFixture([]);
+      const el = { type: 'node', id: 42, lat: LAT, lon: -106.0 + dLon, tags };
+      const raw = label === 'water' ? merge(route, [], [el]) : merge(route, [el]);
+
+      const before = raw.find((w) => w.id === id);
+      expect(before).toBeDefined();
+      expect(before.offCourseDistanceMi).toBeUndefined();
+
+      const after = withRouteDistances(raw, route.trackPoints).find((w) => w.id === id);
+      expect(after.offCourseDistanceMi).toBeGreaterThan(OFF_ROUTE_MI - 0.2);
+      expect(after.offCourseDistanceMi).toBeLessThan(OFF_ROUTE_MI + 0.2);
+    });
+  }
+
+  it('measures the detour without dropping anything', () => {
+    // Each enrichment module applies its own proximity gate, so this must not
+    // filter a second time on a threshold that does not match it -- that would
+    // discard sources those modules kept, including the rider's own GPX
+    // waypoints, which may sit well off the line deliberately.
+    const route = routeFixture([]);
+    const far = {
+      id: 'wpt-9',
+      name: 'Far Spring',
+      type: 'water',
+      lat: LAT,
+      lon: -106.0 + dLon * 4,
+    };
+    const kept = withRouteDistances([far], route.trackPoints);
+    expect(kept).toHaveLength(1);
+    expect(kept[0].offCourseDistanceMi).toBeGreaterThan(4);
+  });
+
+  it('is wired into every enrichment kickoff, not just the ones tested above', () => {
+    // The fix is only worth anything if app.js actually calls it. A previous
+    // change of this shape shipped fully tested and did nothing, because the
+    // tests covered the helper and never the call site.
+    const src = readFileSync(resolve(process.cwd(), 'src/app.js'), 'utf8');
+    const kickoffs = [...src.matchAll(/await\s+enrich\w+Sources\(/g)];
+    expect(kickoffs.length).toBeGreaterThanOrEqual(3);
+    for (const m of src.matchAll(/([\s\S]{0,90})await\s+enrich\w+Sources\(/g)) {
+      expect(m[1]).toContain('withRouteDistances');
+    }
   });
 });
