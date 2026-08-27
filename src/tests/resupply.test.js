@@ -5,6 +5,7 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { parseGPX } from '../gpx.js';
 import {
+  CURATED_RESUPPLY_SOURCES,
   fetchOSMResupply,
   isNearRoute,
   mergeResupplySources,

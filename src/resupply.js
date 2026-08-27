@@ -8,9 +8,16 @@
  * @module resupply
  */
 
+import coconinoCuesheet from './data/coconinoCuesheet.json';
+import coloradoTrailResupply from './data/coloradoTrailResupply.json';
 import { ENRICHMENT_LIMITS, capEnrichedWaypoints } from './enrichmentLimits.js';
 import { describeError } from './errorBoundary.js';
 import { distanceFromStart, fetchOverpass, haversineDistance } from './gpx.js';
+
+export const CURATED_RESUPPLY_SOURCES = [
+  ...coloradoTrailResupply,
+  ...coconinoCuesheet.filter((w) => w.type === 'resupply'),
+];
 
 /** Resupply stops within this many miles of the route are included. */
 export const ROUTE_PROXIMITY_MI = 1.5;
@@ -244,11 +251,35 @@ export async function fetchOSMResupply(bounds) {
  * @param {object[]} osmElements - Raw OSM elements
  * @returns {import('./gpx.js').Waypoint[]}
  */
-export function mergeResupplySources(route, osmElements) {
+export function mergeResupplySources(
+  route,
+  osmElements,
+  curatedSources = CURATED_RESUPPLY_SOURCES,
+) {
   const { trackPoints } = route;
   const sampled = sampleTrackPoints(trackPoints);
   const existing = route.waypoints.filter((w) => w.type === 'resupply');
   const merged = [...existing];
+
+  for (const s of curatedSources) {
+    if (!isNearRoute(s.lat, s.lon, sampled)) continue;
+    if (merged.some((w) => haversineDistance(s.lat, s.lon, w.lat, w.lon) < DEDUP_THRESHOLD_MI)) {
+      continue;
+    }
+    merged.push({
+      id: s.id || `curated-resupply-${s.lat}-${s.lon}`,
+      lat: s.lat,
+      lon: s.lon,
+      name: s.name,
+      description: s.description || '',
+      type: 'resupply',
+      source: s.source || 'curated',
+      resupplyCategory: s.resupplyCategory || 'grocery',
+      reliability: s.reliability ?? 90,
+      elevationFt: s.elevationFt || null,
+      distanceFromStartMi: distanceFromStart(s.lat, s.lon, trackPoints),
+    });
+  }
 
   for (const el of osmElements) {
     const { tags = {} } = el;

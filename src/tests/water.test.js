@@ -3,8 +3,9 @@
  */
 
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { parseGPX } from '../gpx.js';
+import { haversineDistance, parseGPX } from '../gpx.js';
 import {
+  CURATED_WATER_SOURCES,
   USGS_DRINKABLE_SITE_TYPES,
   fetchOSMWater,
   fetchUSGSFlowData,
@@ -260,6 +261,52 @@ describe('mergeWaterSources', () => {
         merged[i - 1].distanceFromStartMi,
       );
     }
+  });
+
+  it('merges curated water sources along route corridor (e.g. past Silverton on CT)', () => {
+    // Route near Molas Pass / Cascade Creek (~37.74, -107.85)
+    const ctRoute = parseGPX(`<?xml version="1.0"?>
+<gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata><name>CT Segment 25</name></metadata>
+  <trk>
+    <name>CT Segment 25</name>
+    <trkseg>
+      <trkpt lat="37.7450" lon="-107.8480"><ele>3200</ele></trkpt>
+      <trkpt lat="37.7438" lon="-107.8505"><ele>3190</ele></trkpt>
+      <trkpt lat="37.7400" lon="-107.8520"><ele>3180</ele></trkpt>
+    </trkseg>
+  </trk>
+</gpx>`);
+
+    const merged = mergeWaterSources(ctRoute, [], []);
+    const cascadeCreek = merged.find((w) => w.name.includes('Cascade Creek'));
+    expect(cascadeCreek).toBeDefined();
+    expect(cascadeCreek.source).toBe('curated');
+    expect(cascadeCreek.reliability).toBeGreaterThanOrEqual(75);
+  });
+
+  it('deduplicates curated water source coincident with existing GPX waypoint', () => {
+    const ctRoute = parseGPX(`<?xml version="1.0"?>
+<gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata><name>CT Segment 25</name></metadata>
+  <wpt lat="37.74381" lon="-107.85056">
+    <name>Cascade Creek</name>
+    <desc>User waypoint</desc>
+  </wpt>
+  <trk>
+    <name>CT Segment 25</name>
+    <trkseg>
+      <trkpt lat="37.7450" lon="-107.8480"><ele>3200</ele></trkpt>
+      <trkpt lat="37.7438" lon="-107.8505"><ele>3190</ele></trkpt>
+    </trkseg>
+  </trk>
+</gpx>`);
+
+    const merged = mergeWaterSources(ctRoute, [], []);
+    const matches = merged.filter(
+      (w) => haversineDistance(w.lat, w.lon, 37.74381, -107.85056) < 0.05,
+    );
+    expect(matches).toHaveLength(1);
   });
 });
 

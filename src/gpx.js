@@ -45,12 +45,20 @@ const WAYPOINT_KEYWORDS = {
     'campsite',
     'bivvy',
     'bivy',
+    'bivouac',
     'sleep',
     'stay',
     'ranch',
     'state park',
     'dispersed',
     'hostel',
+    'tent',
+    'shelter',
+    'cabin',
+    'yurt',
+    'hut',
+    'lodge',
+    'cg',
   ],
   resupply: [
     'food',
@@ -913,7 +921,20 @@ export function classifyOSMElement(tags) {
   ];
   if (resupplyKeywords.some((k) => nameDesc.includes(k))) return 'resupply';
 
-  const campKeywords = ['camp', 'campground', 'campsite', 'bivvy', 'bivy'];
+  const campKeywords = [
+    'camp',
+    'campground',
+    'campsite',
+    'bivvy',
+    'bivy',
+    'bivouac',
+    'tent',
+    'shelter',
+    'cabin',
+    'yurt',
+    'hut',
+    'lodge',
+  ];
   if (campKeywords.some((k) => nameDesc.includes(k))) return 'camping';
 
   return 'navigation';

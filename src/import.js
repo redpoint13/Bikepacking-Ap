@@ -165,7 +165,7 @@ export function classifyRWGPSPoint(cp) {
   const combined = `${type} ${desc}`;
 
   if (/water|spring|creek|river|stream|fountain/.test(combined)) return 'water';
-  if (/camp|bivouac|sleep/.test(combined)) return 'camping';
+  if (/camp|bivouac|bivy|sleep|shelter|cabin|yurt|hut|tent/.test(combined)) return 'camping';
   if (/store|food|resupply|grocery|gas|fuel|cafe|coffee|restaurant/.test(combined))
     return 'resupply';
   return 'navigation';

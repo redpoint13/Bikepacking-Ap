@@ -3,9 +3,12 @@
  */
 
 import { readApiField } from './apiField.js';
+import coloradoTrailCampsites from './data/coloradoTrailCampsites.json';
 import { ENRICHMENT_LIMITS, capEnrichedWaypoints } from './enrichmentLimits.js';
 import { describeError } from './errorBoundary.js';
 import { distanceFromStart, fetchOverpass, haversineDistance } from './gpx.js';
+
+export const CURATED_CAMP_SOURCES = [...coloradoTrailCampsites];
 /** Surface Management Agency layer. Layer 0 is IDENTIFY and is not queryable. */
 const BLM_SMA_LAYER =
   'https://gis.blm.gov/arcgis/rest/services/lands/BLM_Natl_SMA_Cached_with_PriUnk/MapServer/1';
@@ -250,7 +253,7 @@ export async function fetchLandOwnership(lat, lon) {
   }
 }
 
-export function mergeCampSources(route, osmElements) {
+export function mergeCampSources(route, osmElements, curatedSources = CURATED_CAMP_SOURCES) {
   const { trackPoints } = route;
   const sampled = sampleTrackPoints(trackPoints);
   const existing = route.waypoints
@@ -274,6 +277,35 @@ export function mergeCampSources(route, osmElements) {
       };
     });
   const merged = [...existing];
+
+  for (const c of curatedSources) {
+    if (!isNearRoute(c.lat, c.lon, sampled)) continue;
+    if (merged.some((w) => haversineDistance(c.lat, c.lon, w.lat, w.lon) < DEDUP_THRESHOLD_MI)) {
+      continue;
+    }
+    const { landManager, isDispersedLegal } = classifyLandManager(
+      { name: c.name, description: c.description },
+      c.landManager || '',
+    );
+    merged.push({
+      id: c.id || `curated-camp-${c.lat}-${c.lon}`,
+      lat: c.lat,
+      lon: c.lon,
+      name: c.name,
+      description: c.description || '',
+      type: 'camping',
+      source: c.source || 'curated',
+      tier: c.tier || 'official',
+      reliability: c.reliability ?? 90,
+      distanceFromStartMi: distanceFromStart(c.lat, c.lon, trackPoints),
+      landManager: c.landManager || landManager,
+      isDispersedLegal: c.isDispersedLegal ?? isDispersedLegal,
+      waterAvailable: c.waterAvailable || null,
+      waterDetails: c.waterDetails || '',
+      fee: c.fee || null,
+      elevationFt: c.elevationFt || null,
+    });
+  }
 
   for (const el of osmElements) {
     const lat = el.lat ?? el.center?.lat;

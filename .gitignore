@@ -32,3 +32,6 @@ vite.config.ts.timestamp-*
 # Python Virtualenvs
 .venv/
 venv/
+
+# Claude
+.claude/

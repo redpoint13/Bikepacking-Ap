@@ -12,9 +12,12 @@
  */
 
 import { readApiField } from './apiField.js';
+import coloradoTrailWaterSources from './data/coloradoTrailWaterSources.json';
 import { ENRICHMENT_LIMITS, capEnrichedWaypoints } from './enrichmentLimits.js';
 import { describeError } from './errorBoundary.js';
 import { distanceFromStart, fetchOverpass, haversineDistance } from './gpx.js';
+
+export const CURATED_WATER_SOURCES = [...coloradoTrailWaterSources];
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -366,12 +369,34 @@ export function mergeWaterSources(
   osmElements,
   flowMap = new Map(),
   statsMap = new Map(),
+  curatedSources = CURATED_WATER_SOURCES,
 ) {
   const { trackPoints } = route;
   const sampled = sampleTrackPoints(trackPoints);
 
   const existing = route.waypoints.filter((w) => w.type === 'water');
   const merged = [...existing];
+
+  // --- Curated water sources ---
+  for (const w of curatedSources) {
+    if (!isNearRoute(w.lat, w.lon, sampled)) continue;
+    if (merged.some((m) => haversineDistance(w.lat, w.lon, m.lat, m.lon) < DEDUP_THRESHOLD_MI)) {
+      continue;
+    }
+    merged.push({
+      id: w.id || `curated-water-${w.lat}-${w.lon}`,
+      lat: w.lat,
+      lon: w.lon,
+      name: w.name,
+      description: w.description || '',
+      type: 'water',
+      source: w.source || 'curated',
+      reliability: w.reliability ?? 80,
+      seasonalStatus: w.seasonalStatus || 'Normal Seasonal Flow',
+      elevationFt: w.elevationFt || null,
+      distanceFromStartMi: distanceFromStart(w.lat, w.lon, trackPoints),
+    });
+  }
 
   // --- USGS ---
   for (const feature of usgsFeatures) {
