@@ -123,6 +123,11 @@ export function openWaypointEditorModal({
           <textarea id="wpt-desc" class="form-textarea" rows="2" placeholder="e.g. Hidden spigot behind maintenance barn. Clear cold flow.">${description}</textarea>
         </div>
 
+        <label class="wpt-personal" title="Keep this place and apply it to every route that passes near it">
+          <input type="checkbox" id="wpt-personal" ${waypoint?.isPersonal ? 'checked' : ''} />
+          <span>Save to my places — reuse on every route</span>
+        </label>
+
         <div class="waypoint-editor-actions">
           ${isEditing ? `<button type="button" id="wpt-delete-btn" class="btn-wpt btn-wpt--delete">Delete</button>` : ''}
           <div style="margin-left: auto; display: flex; gap: 8px;">
@@ -218,6 +223,9 @@ export function openWaypointEditorModal({
           }
         : {}),
     };
+
+    // Read before closing: the checkbox goes with the modal.
+    result.isPersonal = document.getElementById('wpt-personal')?.checked === true;
 
     closeWaypointEditorModal();
     if (onSave) onSave(result);
