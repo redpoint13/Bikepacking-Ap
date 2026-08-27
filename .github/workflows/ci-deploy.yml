@@ -61,23 +61,52 @@ jobs:
       contents: read
       deployments: write
 
+    # The `secrets` context is not available in a job-level `if:`, so the
+    # configured/not-configured test has to happen through env, which step-level
+    # `if:` can read. Without this the deploy step fails with "Input required and
+    # not supplied: apiToken" on every push, which leaves main permanently red
+    # and trains everyone to ignore CI — the build and tests it is hiding are
+    # the ones that matter.
+    env:
+      CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
     steps:
+      - name: Report that deployment is not configured
+        if: env.CF_API_TOKEN == '' || env.CF_ACCOUNT_ID == ''
+        run: |
+          {
+            echo "### Deployment skipped"
+            echo ""
+            echo "\`CLOUDFLARE_API_TOKEN\` and \`CLOUDFLARE_ACCOUNT_ID\` are not set on this"
+            echo "repository, so there is nothing to deploy to. Lint, tests and the build"
+            echo "all ran and are reported above."
+            echo ""
+            echo "See SETUP.md steps 4-5 to configure it. Once both secrets exist this"
+            echo "step disappears and the deploy runs on its own."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Checkout
+        if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
         uses: actions/checkout@v4
 
       - name: Set up Node 20
+        if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
 
       - name: Install dependencies
+        if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
         run: npm ci
 
       - name: Build
+        if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
         run: npm run build
 
       - name: Deploy to Cloudflare Pages
+        if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
         uses: cloudflare/pages-action@v1
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
