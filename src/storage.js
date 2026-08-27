@@ -10,7 +10,7 @@
 import { describeError } from './errorBoundary.js';
 
 const DB_NAME = 'bpnav-v1';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_NAME = 'route';
 const ROUTES_STORE = 'routes';
 const ROUTE_KEY = 'current';
@@ -40,6 +40,25 @@ export function openDB() {
       if (!db.objectStoreNames.contains(ROUTES_STORE)) {
         db.createObjectStore(ROUTES_STORE, { keyPath: 'id' });
       }
+
+      // v3: index the content fingerprint. Without it, recognising an already
+      // imported route meant reading every record — and each carries its whole
+      // GPX text, so a large library would hold several megabytes in memory on
+      // every import, which is the cost the fingerprint exists to avoid.
+      const routesStore = e.target.transaction.objectStore(ROUTES_STORE);
+      if (!routesStore.indexNames.contains('fingerprint')) {
+        routesStore.createIndex('fingerprint', 'fingerprint', { unique: false });
+      }
+      // Backfill records saved before fingerprints existed, so the index covers
+      // the whole library rather than only routes imported from now on.
+      routesStore.openCursor().onsuccess = (ev) => {
+        const cursor = ev.target.result;
+        if (!cursor) return;
+        if (!cursor.value.fingerprint && cursor.value.gpxText) {
+          cursor.update({ ...cursor.value, fingerprint: routeFingerprint(cursor.value.gpxText) });
+        }
+        cursor.continue();
+      };
     };
 
     req.onsuccess = async (e) => {
@@ -168,17 +187,77 @@ export async function getRouteById(id) {
  * @param {object} [routeData.options]
  * @returns {Promise<string>} The route ID
  */
+/**
+ * A cheap content fingerprint, used to recognise a route already in the library.
+ *
+ * Comparing whole GPX strings means holding several megabytes in memory at
+ * once; length plus a rolling hash separates real routes reliably and costs one
+ * pass. Collisions would merely reuse a record, which is what an identical file
+ * should do anyway.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+export function routeFingerprint(text) {
+  const s = text ?? '';
+  let hash = 5381;
+  for (let i = 0; i < s.length; i++) hash = ((hash << 5) + hash + s.charCodeAt(i)) | 0;
+  return `${s.length}:${(hash >>> 0).toString(36)}`;
+}
+
+/**
+ * Finds an existing library record holding the same GPX content.
+ * @param {string} gpxText
+ * @returns {Promise<object | null>}
+ */
+export async function findRouteByContent(gpxText) {
+  if (!gpxText) return null;
+  const fingerprint = routeFingerprint(gpxText);
+  const db = await openDB();
+  return new Promise((resolve) => {
+    const tx = db.transaction(ROUTES_STORE, 'readonly');
+    const store = tx.objectStore(ROUTES_STORE);
+    if (!store.indexNames.contains('fingerprint')) {
+      resolve(null);
+      return;
+    }
+    const req = store.index('fingerprint').get(fingerprint);
+    req.onsuccess = (e) => resolve(e.target.result ?? null);
+    req.onerror = () => resolve(null);
+  });
+}
+
 export async function saveRouteToLibrary(routeData) {
   const db = await openDB();
-  const id = routeData.id || `route-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+  // Re-importing a file the library already holds must reuse its record, not
+  // mint a new one. Every import previously generated a fresh random id, so the
+  // same GPX loaded twice became two routes — and any waypoint a rider had
+  // added by hand stayed with the first, which is indistinguishable from the
+  // app losing it.
+  const existing = routeData.id ? null : await findRouteByContent(routeData.gpxText);
+  const id =
+    routeData.id ?? existing?.id ?? `route-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+  // Keep hand-placed waypoints across a re-import. Enriched ones are cheap to
+  // rebuild and may be stale; a user- waypoint is not reproducible.
+  const incoming = routeData.waypoints || [];
+  const preserved = (existing?.waypoints ?? []).filter((w) => w.id?.startsWith('user-'));
+  const seen = new Set(incoming.map((w) => w.id));
+  const waypoints = [...incoming, ...preserved.filter((w) => !seen.has(w.id))];
+
   const record = {
     id,
     name: routeData.name || routeData.filename || 'Untitled Route',
     filename: routeData.filename || 'route.gpx',
     gpxText: routeData.gpxText,
+    fingerprint: routeFingerprint(routeData.gpxText),
     totalDistanceMiles: routeData.totalDistanceMiles || 0,
-    waypoints: routeData.waypoints || [],
-    options: routeData.options || null,
+    waypoints,
+    // Explicitly checking undefined, not `||` or `??`: both treat null as
+    // absent, so a caller passing null to clear the options would silently get
+    // the stored ones back. Undefined means "say nothing"; null means "clear".
+    options: routeData.options !== undefined ? routeData.options : (existing?.options ?? null),
     savedAt: routeData.savedAt || Date.now(),
   };
 
