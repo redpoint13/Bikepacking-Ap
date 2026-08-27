@@ -13,7 +13,7 @@ import { describeError } from './errorBoundary.js';
 import { distanceFromStart, fetchOverpass, haversineDistance } from './gpx.js';
 
 /** Resupply stops within this many miles of the route are included. */
-const ROUTE_PROXIMITY_MI = 1.5;
+export const ROUTE_PROXIMITY_MI = 1.5;
 
 /** Stops within this distance of an existing waypoint are deduplicated. */
 const DEDUP_THRESHOLD_MI = 0.1;

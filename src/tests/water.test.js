@@ -415,3 +415,27 @@ describe('mergeWaterSources with flowMap', () => {
     expect(station.description).toBe('Stream (USGS gauge)');
   });
 });
+
+describe('enrichment radius vs planning detour', () => {
+  /**
+   * Enrichment decides which sources exist; planning decides which are worth a
+   * detour. If the first is tighter than the second, sources the planner would
+   * happily use are discarded before it ever sees them — and no amount of
+   * raising maxDetourMi in the UI can surface them, because they were never
+   * fetched. On a Colorado Trail corridor the 1.0 mi filter kept 12 of the 18
+   * USGS sources inside the 1.5 mi detour allowance.
+   */
+  it('keeps every source the planner would consider reaching', async () => {
+    const { PLAN_DEFAULTS } = await import('../plan.js');
+    const { ROUTE_PROXIMITY_MI } = await import('../water.js');
+    expect(ROUTE_PROXIMITY_MI).toBeGreaterThanOrEqual(PLAN_DEFAULTS.maxDetourMi);
+  });
+
+  it('holds for camps and resupply too', async () => {
+    const { PLAN_DEFAULTS } = await import('../plan.js');
+    const camp = await import('../camp.js');
+    const resupply = await import('../resupply.js');
+    expect(camp.ROUTE_PROXIMITY_MI).toBeGreaterThanOrEqual(PLAN_DEFAULTS.maxDetourMi);
+    expect(resupply.ROUTE_PROXIMITY_MI).toBeGreaterThanOrEqual(PLAN_DEFAULTS.maxDetourMi);
+  });
+});
