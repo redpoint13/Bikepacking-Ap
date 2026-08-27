@@ -567,12 +567,21 @@ export async function parseGPXAsync(xmlString, { onProgress } = {}) {
  * distance so the caller can report it. Synthetic camps are discarded outright;
  * the planner regenerates them for the new route.
  *
+ * `keepUserPlaced: false` disables that exception, for callers holding the
+ * waypoints somewhere durable. Personal places live in their own store, so
+ * leaving one out is not losing it — it simply does not apply to this route,
+ * and a place in Colorado has no business appearing on an Arizona route.
+ *
  * @param {import('./gpx.js').Waypoint[]} waypoints
  * @param {Array<[number, number, number]>} trackPoints
- * @param {{maxOffCourseMi?: number}} [options]
+ * @param {{maxOffCourseMi?: number, keepUserPlaced?: boolean}} [options]
  * @returns {{kept: import('./gpx.js').Waypoint[], dropped: import('./gpx.js').Waypoint[]}}
  */
-export function rebaseWaypointsOntoTrack(waypoints, trackPoints, { maxOffCourseMi = 1.5 } = {}) {
+export function rebaseWaypointsOntoTrack(
+  waypoints,
+  trackPoints,
+  { maxOffCourseMi = 1.5, keepUserPlaced = true } = {},
+) {
   const kept = [];
   const dropped = [];
   if (!Array.isArray(waypoints) || !trackPoints?.length) return { kept, dropped };
@@ -593,7 +602,7 @@ export function rebaseWaypointsOntoTrack(waypoints, trackPoints, { maxOffCourseM
       offCourseDistanceMi,
     };
 
-    const isUserPlaced = wp.id?.startsWith('user-');
+    const isUserPlaced = keepUserPlaced && wp.id?.startsWith('user-');
     if (offCourseDistanceMi > maxOffCourseMi && !isUserPlaced) {
       dropped.push(rebased);
       continue;
