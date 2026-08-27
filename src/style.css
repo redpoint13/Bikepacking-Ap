@@ -689,6 +689,16 @@ svg {
 /* --------------------------------------------------------------------------
    Error state
    -------------------------------------------------------------------------- */
+.parse-notice {
+  margin: 0 0 var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--md-sys-shape-corner-small);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  background-color: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+  font-size: var(--md-sys-typescale-body-size);
+}
+
 .parse-error {
   margin: var(--spacing-md);
   padding: var(--spacing-md);
@@ -2445,6 +2455,21 @@ svg {
 
 .btn-import-gpx:hover {
   opacity: 0.9;
+}
+
+/* Sits with the import controls: it modifies what an import does. */
+.route-keep-waypoints {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 0.8rem;
+  color: var(--md-sys-color-on-surface-variant);
+  cursor: pointer;
+}
+
+.route-keep-waypoints input {
+  cursor: pointer;
 }
 
 .route-library-url-import {

@@ -34,6 +34,9 @@ function formatDate(timestamp) {
 }
 
 export async function openRouteLibraryModal({ onSelectRoute, onUploadGPX, onImportURL }) {
+  /** Reads the keep-waypoints choice at the moment of import, not at render. */
+  const keepWaypoints = () => document.getElementById('route-keep-waypoints')?.checked === true;
+
   closeRouteLibraryModal();
 
   const activeId = await getActiveRouteId();
@@ -76,6 +79,11 @@ export async function openRouteLibraryModal({ onSelectRoute, onUploadGPX, onImpo
             Upload GPX
           </label>
         </div>
+
+        <label class="route-keep-waypoints" title="Carry the current route's water, camp and resupply markers onto the new track">
+          <input type="checkbox" id="route-keep-waypoints" />
+          <span>Keep existing waypoints</span>
+        </label>
       </div>
 
       <div class="route-library-url-import">
@@ -212,8 +220,10 @@ export async function openRouteLibraryModal({ onSelectRoute, onUploadGPX, onImpo
   fileInput.addEventListener('change', async (e) => {
     const file = e.target.files?.[0];
     if (file && onUploadGPX) {
+      // Read before closing: the checkbox lives in the modal being torn down.
+      const keep = keepWaypoints();
       closeRouteLibraryModal();
-      await onUploadGPX(file);
+      await onUploadGPX(file, { keepWaypoints: keep });
     }
   });
 
@@ -223,8 +233,11 @@ export async function openRouteLibraryModal({ onSelectRoute, onUploadGPX, onImpo
       urlSubmit.disabled = true;
       urlSubmit.textContent = 'Importing...';
       try {
+        // Read before closing: closeRouteLibraryModal removes the checkbox from
+        // the DOM, so reading it afterwards always returns false.
+        const keep = keepWaypoints();
         closeRouteLibraryModal();
-        await onImportURL(url);
+        await onImportURL(url, { keepWaypoints: keep });
       } catch (err) {
         alert(`Failed to import: ${describeError(err)}`);
       } finally {

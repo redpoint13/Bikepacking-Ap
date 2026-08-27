@@ -144,6 +144,9 @@ export function parseRideWithGPS(data) {
     totalDistanceMiles,
     trackPoints,
     waypoints,
+    // sun.js reads route.startPoint directly; parseGPX supplies it and these
+    // did not, so every URL import threw on apply.
+    startPoint: { lat: trackPoints[0]?.[0], lon: trackPoints[0]?.[1] },
     bounds,
     startOffsetMi: 0,
     isLoop: loop,
@@ -231,6 +234,9 @@ export function parseKomoot(data) {
     totalDistanceMiles,
     trackPoints,
     waypoints,
+    // sun.js reads route.startPoint directly; parseGPX supplies it and these
+    // did not, so every URL import threw on apply.
+    startPoint: { lat: trackPoints[0]?.[0], lon: trackPoints[0]?.[1] },
     bounds,
     startOffsetMi: 0,
     isLoop: loop,
