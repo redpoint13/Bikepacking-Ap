@@ -93,3 +93,15 @@ describe('projecting places onto a route', () => {
     expect(rebaseWaypointsOntoTrack(stored, track()).kept).toHaveLength(1);
   });
 });
+
+describe('unticking removes the place', () => {
+  it('stops it reappearing on other routes', async () => {
+    // The modal save path deletes when the box is clear, so a place taken out
+    // of the store does not keep coming back. Wiring this to the wrong handler
+    // is how the feature first shipped doing nothing at all.
+    await savePersonalWaypoint(place());
+    expect(await getPersonalWaypoints()).toHaveLength(1);
+    await deletePersonalWaypoint(place().id);
+    expect(await getPersonalWaypoints()).toHaveLength(0);
+  });
+});

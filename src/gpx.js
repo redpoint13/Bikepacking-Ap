@@ -574,7 +574,7 @@ export async function parseGPXAsync(xmlString, { onProgress } = {}) {
  *
  * @param {import('./gpx.js').Waypoint[]} waypoints
  * @param {Array<[number, number, number]>} trackPoints
- * @param {{maxOffCourseMi?: number}} [options]
+ * @param {{maxOffCourseMi?: number, keepUserPlaced?: boolean}} [options]
  * @returns {{kept: import('./gpx.js').Waypoint[], dropped: import('./gpx.js').Waypoint[]}}
  */
 export function rebaseWaypointsOntoTrack(

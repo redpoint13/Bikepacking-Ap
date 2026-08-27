@@ -52,6 +52,7 @@ import { appState, getPlanDefaults, persistUserPreferences } from './state.js';
 import {
   clearEnrichment,
   clearPlanOptions,
+  deletePersonalWaypoint,
   exportPlanBundle,
   getPersonalWaypoints,
   loadEnrichment,
@@ -1229,15 +1230,6 @@ function wireEvents(container) {
       offCourseDistanceMi: result.offCourseDistanceMi,
     };
 
-    // A place marked personal is stored separately too, so it comes back on
-    // every route that passes near it rather than only this one.
-    if (result.isPersonal) {
-      customWp.isPersonal = true;
-      savePersonalWaypoint(customWp).catch((err) =>
-        console.warn('[BPNav] Could not save personal waypoint:', describeError(err)),
-      );
-    }
-
     currentRoute.waypoints.push(customWp);
     currentRoute.waypoints.sort((a, b) => a.distanceFromStartMi - b.distanceFromStartMi);
     markWaypointsChanged(currentRoute);
@@ -1256,6 +1248,17 @@ function wireEvents(container) {
 
   function handleSaveCustomWaypoint(wpt) {
     if (!currentRoute) return;
+
+    // "Save to my places" arrives here, on the modal's onSave — the only path
+    // carrying isPersonal. Unticking matters as much as ticking: a place taken
+    // out of the store should stop reappearing on other routes.
+    if (wpt.isPersonal) {
+      savePersonalWaypoint(wpt).catch((err) =>
+        console.warn('[BPNav] Could not save personal waypoint:', describeError(err)),
+      );
+    } else {
+      deletePersonalWaypoint(wpt.id).catch(() => {});
+    }
     const idx = currentRoute.waypoints.findIndex((w) => w.id === wpt.id);
     if (idx >= 0) {
       currentRoute.waypoints[idx] = wpt;
