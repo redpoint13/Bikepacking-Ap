@@ -343,7 +343,7 @@ function getText(el, tag) {
  * @property {number} distanceFromStartMi  - Along-track miles from route start
  * @property {number} [offCourseDistanceMi] - Miles from the route line
  * @property {string} [source]            - 'usgs' | 'osm' | 'synthetic' | importer
- * @property {string} [tags]              - Raw OSM tags, where carried
+ * @property {Record<string, string>} [tags] - Raw OSM key/value tags, where carried
  *
  * Camp-specific, set by camp.js and read by planning:
  * @property {'official' | 'dispersed' | null} [tier]
