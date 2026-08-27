@@ -11,6 +11,7 @@
  * @module water
  */
 
+import { readApiField } from './apiField.js';
 import { ENRICHMENT_LIMITS, capEnrichedWaypoints } from './enrichmentLimits.js';
 import { describeError } from './errorBoundary.js';
 import { distanceFromStart, fetchOverpass, haversineDistance } from './gpx.js';
@@ -102,8 +103,9 @@ export const USGS_DRINKABLE_SITE_TYPES = {
  * @returns {string}
  */
 export function usgsSiteType(feature) {
-  const p = feature?.properties ?? {};
-  return p.site_type_code ?? p.siteTypeCode ?? '';
+  return String(
+    readApiField(feature?.properties, ['site_type_code', 'siteTypeCode'], 'USGS site type') ?? '',
+  );
 }
 
 /**
@@ -384,7 +386,11 @@ export function mergeWaterSources(
     // snake_case, as the API returns it. The old camelCase reads produced
     // undefined, which gave every station the id "usgs-undefined" and the name
     // "USGS Station", and meant the live-flow lookup below never matched.
-    const siteId = props.monitoring_location_number ?? props.monitoringLocationNumber;
+    const siteId = readApiField(
+      props,
+      ['monitoring_location_number', 'monitoringLocationNumber'],
+      'USGS site number',
+    );
     let reliability = usgsReliability(feature);
     // Defence in depth: if a response ever carries a type we do not serve
     // water from, drop it rather than let it through with a zero score.
@@ -409,7 +415,13 @@ export function mergeWaterSources(
       id: `usgs-${siteId ?? feature.id}`,
       lat,
       lon,
-      name: props.monitoring_location_name ?? props.monitoringLocationName ?? 'USGS Station',
+      name: String(
+        readApiField(
+          props,
+          ['monitoring_location_name', 'monitoringLocationName'],
+          'USGS site name',
+        ) ?? 'USGS Station',
+      ),
       description: `${usgsSiteLabel(feature)}${flowDesc}`,
       type: 'water',
       source: 'usgs',

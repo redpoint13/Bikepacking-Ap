@@ -1,0 +1,60 @@
+#
+#
+# US Geological Survey, Water Resources Data
+# retrieved: 2026-08-27 10:14:17 -04:00	(natwebcaas01)
+#
+# This file contains USGS Daily Statistics
+#
+# Note:The statistics generated are based on approved daily-mean data and may not match those published by the USGS in official publications.
+# The user is responsible for assessment and use of statistics from this site.
+# For more details on why the statistics may not match, visit http://help.waterdata.usgs.gov/faq/about-statistics.
+#
+# Data heading explanations.
+# agency_cd       -- agency code
+# site_no         -- Site identification number
+# parameter_cd    -- Parameter code
+# station_nm      -- Site name
+# loc_web_ds      -- Additional measurement description
+#
+# Data for the following 1 site(s) are contained in this file
+# agency_cd   site_no      parameter_cd   station_nm (loc_web_ds)
+# USGS        09066510     00060          GORE CREEK AT MOUTH NEAR MINTURN, CO
+#
+# Explanation of Parameter Codes
+# parameter_cd	Parameter Name
+# 00060         Discharge, cubic feet per second
+#
+# Data heading explanations.
+# month_nu    ... The month for which the statistics apply.
+# day_nu      ... The day for which the statistics apply.
+# begin_yr    ... First water year of data of daily mean values for this day.
+# end_yr      ... Last water year of data of daily mean values for this day.
+# count_nu    ... Number of values used in the calculation.
+# p10_va      ... 10 percentile of daily mean values for this day.
+# p25_va      ... 25 percentile of daily mean values for this day.
+# p50_va      ... 50 percentile (median) of daily mean values for this day.
+# p75_va      ... 75 percentile of daily mean values for this day.
+# p90_va      ... 90 percentile of daily mean values for this day.
+#
+agency_cd	site_no	parameter_cd	ts_id	loc_web_ds	month_nu	day_nu	begin_yr	end_yr	count_nu	p10_va	p25_va	p50_va	p75_va	p90_va
+5s	15s	5s	10n	15s	3n	3n	6n	6n	8n	12s	12s	12s	12s	12s
+USGS	09066510	00060	18604		1	1	1996	2026	31	15	17	20	22	
+USGS	09066510	00060	18604		1	2	1996	2026	31	15	17	20	22	
+USGS	09066510	00060	18604		1	3	1996	2026	31	15	16	20	22	
+USGS	09066510	00060	18604		1	4	1996	2026	31	14	17	19	22	
+USGS	09066510	00060	18604		1	5	1996	2026	31	15	17	20	21	
+USGS	09066510	00060	18604		1	6	1996	2026	31	15	17	20	21	
+USGS	09066510	00060	18604		1	7	1996	2026	31	16	17	20	21	
+USGS	09066510	00060	18604		1	8	1996	2026	31	16	17	19	22	
+USGS	09066510	00060	18604		1	9	1996	2026	31	16	17	19	22	
+USGS	09066510	00060	18604		1	10	1996	2026	31	15	17	19	20	
+USGS	09066510	00060	18604		1	11	1996	2026	31	15	17	19	21	
+USGS	09066510	00060	18604		1	12	1996	2026	31	16	17	19	22	
+USGS	09066510	00060	18604		1	13	1996	2026	31	16	17	19	21	
+USGS	09066510	00060	18604		1	14	1996	2026	31	16	17	19	21	
+USGS	09066510	00060	18604		1	15	1996	2026	31	16	17	19	21	
+USGS	09066510	00060	18604		1	16	1996	2026	31	16	17	19	22	
+USGS	09066510	00060	18604		1	17	1996	2026	31	16	17	19	20	
+USGS	09066510	00060	18604		1	18	1996	2026	31	15	17	19	21	
+USGS	09066510	00060	18604		1	19	1996	2026	31	15	16	19	22	
+USGS	09066510	00060	18604		1	20	1996	2026	31	14	16	19	22	

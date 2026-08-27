@@ -1,0 +1,1 @@
+{"displayFieldName":"WILDERNESSNAME","fieldAliases":{"wildernessname":"Wilderness Name"},"fields":[{"name":"wildernessname","type":"esriFieldTypeString","alias":"Wilderness Name","length":80}],"features":[{"attributes":{"wildernessname":"Lost Creek Wilderness"}}]}

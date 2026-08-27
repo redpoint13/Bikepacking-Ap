@@ -15,6 +15,7 @@
  * @module wilderness
  */
 
+import { readApiField } from './apiField.js';
 import { describeError } from './errorBoundary.js';
 
 const WILDERNESS_LAYER =
@@ -89,12 +90,8 @@ export async function fetchWildernessAreas(bounds) {
  * @returns {string}
  */
 export function readWildernessName(attrs) {
-  for (const [key, value] of Object.entries(attrs ?? {})) {
-    if (key.toLowerCase() === 'wildernessname' && typeof value === 'string' && value.trim()) {
-      return value.trim();
-    }
-  }
-  return 'Wilderness Area';
+  const value = readApiField(attrs, ['WILDERNESSNAME', 'wildernessname'], 'Wilderness name');
+  return typeof value === 'string' && value.trim() ? value.trim() : 'Wilderness Area';
 }
 
 /**
