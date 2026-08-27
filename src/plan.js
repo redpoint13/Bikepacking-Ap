@@ -634,7 +634,11 @@ export function computeFoodCarry(route, opts = {}) {
   const anchors = [{ mi: 0, name: 'Start', category: 'grocery' }];
   for (const wp of activeResupplies) {
     const cat =
-      wp.resupplyCategory || inferResupplyCategory(wp.name, wp.description, wp.tags || {});
+      // `category` is the legacy name: waypoints cached in IndexedDB before the
+      // rename still carry it, so read both before falling back to inference.
+      wp.resupplyCategory ||
+      wp.category ||
+      inferResupplyCategory(wp.name, wp.description, wp.tags || {});
     anchors.push({ mi: wp.distanceFromStartMi, name: wp.name || 'Resupply', category: cat, wp });
   }
   anchors.push({ mi: total, name: 'Finish', category: 'none' });

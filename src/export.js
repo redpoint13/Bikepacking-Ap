@@ -42,9 +42,12 @@ export function generateGPX(originalGpxText, route, planOptions) {
     nameNode.textContent = wp.name;
     wptNode.appendChild(nameNode);
 
-    if (wp.desc) {
+    // `description`, not `desc`. Nothing has ever set `desc`, so every exported
+    // GPX silently dropped its waypoint notes — reliability, seasonal flow,
+    // camp details — which is most of what makes an export worth having.
+    if (wp.description) {
       const descNode = doc.createElement('desc');
-      descNode.textContent = wp.desc;
+      descNode.textContent = wp.description;
       wptNode.appendChild(descNode);
     }
 
