@@ -983,13 +983,28 @@ export function buildDayPlan(route, opts = {}) {
         surfaceFactor: o.surfaceFactor,
       });
 
+      // When no designated campsite exists in the window, check for a nearby
+      // reliable water source on the route to suggest an established dispersed camp.
+      const nearbyWater = waypoints
+        .filter(
+          (w) =>
+            w.type === 'water' &&
+            isReliableWater(w, o.reliableWaterThreshold) &&
+            w.distanceFromStartMi > startMi + 0.2 &&
+            Math.abs(w.distanceFromStartMi - targetMi) <= 2.5,
+        )
+        .sort(
+          (a, b) =>
+            Math.abs(a.distanceFromStartMi - targetMi) - Math.abs(b.distanceFromStartMi - targetMi),
+        )[0];
+
+      const campName = nearbyWater
+        ? `Dispersed Camp near ${nearbyWater.name || 'Water'} (mi ${nearbyWater.distanceFromStartMi.toFixed(1)})`
+        : `Target mi ${targetMi.toFixed(1)} — no known site`;
+
       return {
         campId,
-        // Named for what it is. "Dispersed Camp" read like a found site; this
-        // is the mile the day happens to end at. The legacy string is still
-        // matched by the synthetic-waypoint strippers in export/storage/app so
-        // plans saved under the old name keep being filtered correctly.
-        campName: `Target mi ${targetMi.toFixed(1)} — no known site`,
+        campName,
         endMi: targetMi,
         miles: round1(targetMi - startMi),
         nextWaterMi: waterInfo ? waterInfo.miles : null,
@@ -1384,7 +1399,9 @@ export function getWaypointsWithSyntheticCamps(route, opts) {
           lat: pt[0],
           lon: pt[1],
           distanceFromStartMi: chosen.endMi,
-          description: `No campsite is known near mile ${round1(chosen.endMi)}. This is simply where Day ${d.day} reaches your target distance — you will need to find a spot. Check the land is open to camping before you rely on it.`,
+          description: chosen.campName?.includes('Dispersed Camp near')
+            ? `Recommended dispersed camping area near water at mile ${round1(chosen.endMi)}. Verify local USFS/BLM regulations and pitch camp in an established flat spot away from the trail and water.`
+            : `No campsite is known near mile ${round1(chosen.endMi)}. This is simply where Day ${d.day} reaches your target distance — you will need to find a spot. Check the land is open to camping before you rely on it.`,
           // Deliberately null, not 100. This is a point on a line, not a site:
           // nothing is known about whether it is flat, sheltered, legal or even
           // campable. A score of 100 made the least-informed markers on the map

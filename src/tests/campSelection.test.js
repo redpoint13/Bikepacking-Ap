@@ -184,3 +184,40 @@ describe('the last-resort fallback honours legality too', () => {
     expect(days[0].chosen.campId).toBe('only-and-legal');
   });
 });
+
+describe('synthetic camp water proximity recommendation', () => {
+  const opts = { ...PLAN_DEFAULTS, targetDailyMiles: 40 };
+
+  it('names dispersed camp near reliable water when water is close to target mileage', () => {
+    const route = makeRoute([
+      {
+        id: 'water-spring-39',
+        name: 'Cascade Spring',
+        type: 'water',
+        distanceFromStartMi: 39.5,
+        lat: 37.74,
+        lon: -107.85,
+        reliability: 90,
+      },
+    ]);
+    const days = buildDayPlan(route, opts);
+    expect(days[0].chosen.campName).toContain('Dispersed Camp near Cascade Spring');
+    expect(days[0].chosen.campName).toContain('39.5');
+  });
+
+  it('falls back to no known site when no water is near target mileage', () => {
+    const route = makeRoute([
+      {
+        id: 'water-spring-10',
+        name: 'Far Spring',
+        type: 'water',
+        distanceFromStartMi: 10,
+        lat: 37.74,
+        lon: -107.85,
+        reliability: 90,
+      },
+    ]);
+    const days = buildDayPlan(route, opts);
+    expect(days[0].chosen.campName).toMatch(/Target mi 40.0 — no known site/);
+  });
+});
