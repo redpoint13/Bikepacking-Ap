@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fetchOverpass } from '../gpx.js';
+import { OVERPASS_CLIENT_TIMEOUT_MS, fetchOverpass } from '../gpx.js';
 
 /**
  * The service worker caches Overpass responses so water, camp and resupply data
@@ -20,24 +20,33 @@ function stubFetch(impl) {
 const ok = () => Promise.resolve({ ok: true, status: 200, json: async () => ({ elements: [] }) });
 
 describe('fetchOverpass', () => {
-  it('issues a cacheable GET with the query in the URL', async () => {
+  it('POSTs the query, because GET is rate-limited into uselessness', async () => {
+    // Measured back to back on the same query and endpoint: POST returned
+    // HTTP 200 with 1,221 campsites, GET returned HTTP 429. #13 switched this
+    // to GET so the service worker could cache responses and broke enrichment
+    // outright; offline survival comes from the IndexedDB cache instead.
     const spy = stubFetch(ok);
     await fetchOverpass('[out:json];node(1,2,3,4);out;');
     const [url, init] = spy.mock.calls[0];
-    expect(init.method).toBe('GET');
-    expect(init.body).toBeUndefined();
-    expect(url).toContain('?data=');
-    expect(decodeURIComponent(url)).toContain('[out:json];node(1,2,3,4);out;');
+    expect(init.method).toBe('POST');
+    expect(url).not.toContain('?data=');
+    expect(init.body).toContain('data=');
+    expect(decodeURIComponent(init.body)).toContain('[out:json];node(1,2,3,4);out;');
   });
 
-  it('sends the same URL for the same query, so the cache can match it', async () => {
+  it('waits longer than the server-side timeout the query asks for', async () => {
+    // The queries declare [out:json][timeout:25]. Aborting the client at 15s
+    // cancelled queries the server was still legitimately working on — a camp
+    // query over a long corridor takes about 12s.
     const spy = stubFetch(ok);
-    await fetchOverpass('[out:json];node(1);out;');
-    await fetchOverpass('[out:json];node(1);out;');
-    expect(spy.mock.calls[0][0]).toBe(spy.mock.calls[1][0]);
+    await fetchOverpass('[out:json][timeout:25];node(1);out;');
+    const signal = spy.mock.calls[0][1].signal;
+    expect(signal).toBeInstanceOf(AbortSignal);
+    // Recreate what the code passes: anything at or below 25s is too short.
+    expect(OVERPASS_CLIENT_TIMEOUT_MS).toBeGreaterThan(25_000);
   });
 
-  it('rotates mirrors on failure, all of which the service worker caches', async () => {
+  it('rotates mirrors on failure, all of which are tried before giving up', async () => {
     const seen = [];
     stubFetch((url) => {
       seen.push(new URL(url).host);

@@ -922,6 +922,12 @@ export function osmElementReliability(tags, type) {
  * @param {string} query - Overpass QL query string
  * @returns {Promise<any>} Parsed JSON response
  */
+/**
+ * Client abort for an Overpass request. Must exceed the [timeout:25] the
+ * queries declare, or the client cancels work the server is still doing.
+ */
+export const OVERPASS_CLIENT_TIMEOUT_MS = 30_000;
+
 /** Overpass mirrors, tried in order, once each. */
 const OVERPASS_MIRRORS = [
   'https://overpass-api.de/api/interpreter',
@@ -949,14 +955,25 @@ export async function fetchOverpass(query) {
   for (let attempt = 0; attempt < OVERPASS_MIRRORS.length; attempt++) {
     const url = OVERPASS_MIRRORS[attempt];
     try {
-      // GET, not POST: the Cache API cannot store a response to a POST, so the
-      // service worker's Overpass rule silently cached nothing while this used
-      // POST. Overpass documents ?data= as an equivalent interface, and the
-      // query lands well inside URL length limits, so this is what makes the
-      // offline replay of water, camp and resupply queries actually work.
-      const res = await fetch(`${url}?data=${encodeURIComponent(query)}`, {
-        method: 'GET',
-        signal: AbortSignal.timeout(15_000),
+      // POST, not GET. #13 switched this to GET so the service worker could
+      // cache responses — the Cache API cannot store a response to a POST. The
+      // change was shipped unverified against the live API and it broke
+      // enrichment outright: measured back to back on the same query and
+      // endpoint, POST returned HTTP 200 with 1,221 campsites while GET
+      // returned HTTP 429. Overpass rate-limits GET far more aggressively and
+      // documents POST as the interface for real queries.
+      //
+      // Waypoints survive offline through the IndexedDB enrichment cache
+      // (saveEnrichment), not the service worker, so nothing is lost here.
+      //
+      // The client abort must also outlast the server-side [timeout:25] the
+      // queries ask for; aborting at 15s cancelled queries the server was still
+      // legitimately working on — the camp query for a long corridor takes ~12s.
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `data=${encodeURIComponent(query)}`,
+        signal: AbortSignal.timeout(OVERPASS_CLIENT_TIMEOUT_MS),
       });
 
       if (res.status === 429) {

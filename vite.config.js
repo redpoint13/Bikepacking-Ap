@@ -93,20 +93,11 @@ export default defineConfig({
               cacheableResponse: { statuses: [0, 200] },
             },
           },
-          // OSM Overpass — all four mirrors that fetchOverpass rotates through.
-          // Only the primary was cached before, so whether water, camp and
-          // resupply data survived offline depended on which mirror happened to
-          // answer. 30-day expiry covers planning well ahead of a trip.
-          {
-            urlPattern:
-              /^https:\/\/(overpass-api\.de|lz4\.overpass-api\.de|z\.overpass-api\.de|overpass\.kumi\.systems)\/.*/i,
-            handler: 'StaleWhileRevalidate',
-            options: {
-              cacheName: 'osm-overpass',
-              expiration: { maxAgeSeconds: 60 * 60 * 24 * 30, maxEntries: 500 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
+          // No Overpass rule here on purpose. fetchOverpass POSTs, and the Cache
+          // API cannot store a response to a POST, so any runtimeCaching entry
+          // for it would be inert config of exactly the kind removed in #9.
+          // Enriched waypoints survive offline through the IndexedDB cache in
+          // storage.js instead, which is method-agnostic.
           // Designated Wilderness boundaries. Bikes are barred from these, so a
           // rider needs the answer out of signal as much as in it — and the
           // polygons only change when Congress designates a new area.
