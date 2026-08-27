@@ -141,3 +141,46 @@ describe('synthetic camps state what they are', () => {
     expect(s.isSynthetic).toBe(true);
   });
 });
+
+describe('the last-resort fallback honours legality too', () => {
+  /**
+   * When no camp falls inside the short, medium or long window, buildDayPlan
+   * drops to a fallback that takes the nearest camp within ~45% of the target.
+   * That loop did not consult isCampLegal, so the one situation the hard filter
+   * exists for — a dispersed site on land closed to dispersed camping being the
+   * only thing in range — was exactly the situation that bypassed it.
+   *
+   * With target 45 the windows span 27–63 miles, and the fallback reaches
+   * 24.75–65.25, so a camp at mile 25 is outside every window but inside the
+   * fallback's range.
+   */
+  const opts = { ...PLAN_DEFAULTS, targetDailyMiles: 45 };
+
+  it('degrades to a synthetic marker rather than an illegal camp', () => {
+    const route = makeRoute([
+      camp({
+        id: 'only-and-illegal',
+        distanceFromStartMi: 25,
+        tier: 'dispersed',
+        isDispersedLegal: false,
+      }),
+    ]);
+    const days = buildDayPlan(route, opts);
+    expect(days[0].chosen.campId).not.toBe('only-and-illegal');
+    expect(days[0].chosen.campId).toMatch(/^synth-camp-/);
+  });
+
+  it('still uses the fallback when the only camp in range is legal', () => {
+    // Guards against fixing the leak by breaking the fallback outright.
+    const route = makeRoute([
+      camp({
+        id: 'only-and-legal',
+        distanceFromStartMi: 25,
+        tier: 'dispersed',
+        isDispersedLegal: true,
+      }),
+    ]);
+    const days = buildDayPlan(route, opts);
+    expect(days[0].chosen.campId).toBe('only-and-legal');
+  });
+});

@@ -676,16 +676,6 @@ export function computeFoodCarry(route, opts = {}) {
 // ---------------------------------------------------------------------------
 
 /**
- * Picks the camp nearest a target mile from a list of candidate camps that lie
- * ahead of `afterMi`. Returns null if none qualify.
- * @param {import('./gpx.js').Waypoint[]} camps
- * @param {number} afterMi
- * @param {number} targetMi
- * @param {number} windowLo  - absolute lower bound (miles)
- * @param {number} windowHi  - absolute upper bound (miles)
- * @returns {import('./gpx.js').Waypoint | null}
- */
-/**
  * Quality penalties, expressed in miles-off-target.
  *
  * Distance to the day's target stays the primary axis — a camp 15 miles early
@@ -743,9 +733,17 @@ export function campCost(camp, targetMi) {
 
 /**
  * Picks the best camp for a day: nearest the target, adjusted for what is
- * actually known about each site. Selection used to be distance alone, which
- * ignored every quality signal camp.js computes — an established site with
- * water lost to an unknown point a tenth of a mile closer.
+ * actually known about each site, from candidates ahead of `afterMi` and inside
+ * the window. Selection used to be distance alone, which ignored every quality
+ * signal camp.js computes — an established site with water lost to an unknown
+ * point a tenth of a mile closer. Returns null if none qualify.
+ *
+ * @param {import('./gpx.js').Waypoint[]} camps
+ * @param {number} afterMi
+ * @param {number} targetMi
+ * @param {number} windowLo  - absolute lower bound (miles)
+ * @param {number} windowHi  - absolute upper bound (miles)
+ * @returns {import('./gpx.js').Waypoint | null}
  */
 function pickCampNear(camps, afterMi, targetMi, windowLo, windowHi) {
   let best = null;
@@ -994,6 +992,12 @@ export function buildDayPlan(route, opts = {}) {
       const maxAllowedDelta = o.targetDailyMiles * 0.45; // Max ~15 miles off target daily miles
 
       for (const c of camps) {
+        // The same legality filter pickCampNear applies. Without it, a day whose
+        // windowed picks all came back null fell through to the nearest camp
+        // regardless — so the one case the hard filter exists for, a dispersed
+        // site on land closed to dispersed camping being the only thing in
+        // range, was exactly the case that bypassed it.
+        if (!isCampLegal(c)) continue;
         if (c.distanceFromStartMi > startMi + 0.05) {
           const delta = Math.abs(c.distanceFromStartMi - target);
           if (delta < minDelta) {
@@ -1357,10 +1361,7 @@ export function getWaypointsWithSyntheticCamps(route, opts) {
           lat: pt[0],
           lon: pt[1],
           distanceFromStartMi: chosen.endMi,
-          description:
-            `No campsite is known near mile ${round1(chosen.endMi)}. This is simply where ` +
-            `Day ${d.day} reaches your target distance — you will need to find a spot. ` +
-            'Check the land is open to camping before you rely on it.',
+          description: `No campsite is known near mile ${round1(chosen.endMi)}. This is simply where Day ${d.day} reaches your target distance — you will need to find a spot. Check the land is open to camping before you rely on it.`,
           // Deliberately null, not 100. This is a point on a line, not a site:
           // nothing is known about whether it is flat, sheltered, legal or even
           // campable. A score of 100 made the least-informed markers on the map
