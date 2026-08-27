@@ -253,6 +253,53 @@ describe('mergeCampSources', () => {
     expect(added.waterAvailable).toBe('potable');
     expect(added.fee).toBe('$27/night');
   });
+
+  it('merges curated campsite sources within route corridor', () => {
+    // Route near Colorado Trail Buffalo Creek area (~39.34, -105.34)
+    const ctRoute = parseGPX(`<?xml version="1.0"?>
+<gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata><name>CT Segment 3</name></metadata>
+  <trk>
+    <name>CT Segment 3</name>
+    <trkseg>
+      <trkpt lat="39.3500" lon="-105.3300"><ele>2200</ele></trkpt>
+      <trkpt lat="39.3400" lon="-105.3360"><ele>2260</ele></trkpt>
+      <trkpt lat="39.3300" lon="-105.3400"><ele>2300</ele></trkpt>
+    </trkseg>
+  </trk>
+</gpx>`);
+
+    const merged = mergeCampSources(ctRoute, []);
+    const meadowsCg = merged.find((w) => w.name.includes('Meadows Campground'));
+    expect(meadowsCg).toBeDefined();
+    expect(meadowsCg.source).toBe('curated');
+    expect(meadowsCg.tier).toBe('official');
+    expect(meadowsCg.landManager).toBe('USFS');
+    expect(meadowsCg.waterAvailable).toBe('potable');
+    expect(meadowsCg.reliability).toBe(95);
+  });
+
+  it('deduplicates curated campsites if already in route waypoints', () => {
+    const ctRouteWithWpt = parseGPX(`<?xml version="1.0"?>
+<gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata><name>CT Route</name></metadata>
+  <wpt lat="39.33962" lon="-105.33613">
+    <name>Meadows Campground (Buffalo Creek)</name>
+    <desc>Existing camp waypoint</desc>
+  </wpt>
+  <trk>
+    <name>CT Route</name>
+    <trkseg>
+      <trkpt lat="39.3400" lon="-105.3360"><ele>2260</ele></trkpt>
+      <trkpt lat="39.3300" lon="-105.3400"><ele>2300</ele></trkpt>
+    </trkseg>
+  </trk>
+</gpx>`);
+
+    const merged = mergeCampSources(ctRouteWithWpt, []);
+    const matches = merged.filter((w) => w.name.includes('Meadows Campground'));
+    expect(matches).toHaveLength(1);
+  });
 });
 
 describe('osmCampWater', () => {

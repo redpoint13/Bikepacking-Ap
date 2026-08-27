@@ -3,8 +3,9 @@
  */
 
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { parseGPX } from '../gpx.js';
+import { haversineDistance, parseGPX } from '../gpx.js';
 import {
+  CURATED_RESUPPLY_SOURCES,
   fetchOSMResupply,
   isNearRoute,
   mergeResupplySources,
@@ -289,6 +290,52 @@ describe('mergeResupplySources', () => {
     expect(added).toBeDefined();
     expect(added.resupplyCategory).toBe('other');
     expect(added.reliability).toBe(60);
+  });
+
+  // --- Curated Colorado Trail hubs ------------------------------------------
+
+  const leadville = CURATED_RESUPPLY_SOURCES.find((s) => s.id === 'ct-resupply-leadville');
+
+  /** Builds a short track running ~0.4 mi east of the given point. */
+  const routePassing = (lat, lon, wpt = '') =>
+    parseGPX(`<?xml version="1.0"?>
+<gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata><name>CT near a town hub</name></metadata>
+  ${wpt}
+  <trk><name>CT</name><trkseg>
+    <trkpt lat="${lat - 0.003}" lon="${lon + 0.008}"><ele>3100</ele></trkpt>
+    <trkpt lat="${lat}" lon="${lon + 0.008}"><ele>3100</ele></trkpt>
+    <trkpt lat="${lat + 0.003}" lon="${lon + 0.008}"><ele>3100</ele></trkpt>
+  </trkseg></trk>
+</gpx>`);
+
+  it('merges a curated CT town hub when the route passes it', () => {
+    const merged = mergeResupplySources(routePassing(leadville.lat, leadville.lon), []);
+    const hub = merged.find((w) => w.id === leadville.id);
+    expect(hub).toBeDefined();
+    expect(hub.source).toBe('curated');
+    expect(hub.type).toBe('resupply');
+    expect(hub.resupplyCategory).toBe('grocery');
+  });
+
+  it('leaves curated CT hubs off a route that never goes near them', () => {
+    // The shared fixture route is in Arizona, ~600 mi from any CT hub.
+    const merged = mergeResupplySources(route, []);
+    expect(merged.some((w) => w.source === 'curated')).toBe(false);
+  });
+
+  it('deduplicates a curated hub against a coincident existing waypoint', () => {
+    const withStore = routePassing(
+      leadville.lat,
+      leadville.lon,
+      `<wpt lat="${leadville.lat}" lon="${leadville.lon}"><name>Leadville Grocery</name></wpt>`,
+    );
+    const merged = mergeResupplySources(withStore, []);
+    const atLeadville = merged.filter(
+      (w) => haversineDistance(w.lat, w.lon, leadville.lat, leadville.lon) < 0.05,
+    );
+    expect(atLeadville).toHaveLength(1);
+    expect(atLeadville[0].source).not.toBe('curated');
   });
 });
 

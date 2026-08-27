@@ -132,6 +132,12 @@ describe('classifyWaypoint', () => {
   it('returns camping for camp keywords', () => {
     expect(classifyWaypoint('Dead Horse Ranch State Park')).toBe('camping');
     expect(classifyWaypoint('Camp Site')).toBe('camping');
+    expect(classifyWaypoint('Shelter Cabin')).toBe('camping');
+    expect(classifyWaypoint('Colorado Trail Yurt')).toBe('camping');
+    expect(classifyWaypoint('10th Mountain Hut')).toBe('camping');
+    expect(classifyWaypoint('2 Tent Site')).toBe('camping');
+    expect(classifyWaypoint('Meadows CG Road')).toBe('camping');
+    expect(classifyWaypoint('Wilderness Bivouac')).toBe('camping');
   });
 
   it('returns resupply for store keywords', () => {

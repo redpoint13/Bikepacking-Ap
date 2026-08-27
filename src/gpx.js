@@ -45,12 +45,20 @@ const WAYPOINT_KEYWORDS = {
     'campsite',
     'bivvy',
     'bivy',
+    'bivouac',
     'sleep',
     'stay',
     'ranch',
     'state park',
     'dispersed',
     'hostel',
+    'tent',
+    'shelter',
+    'cabin',
+    'yurt',
+    'hut',
+    'lodge',
+    'cg',
   ],
   resupply: [
     'food',
@@ -251,6 +259,41 @@ export function distanceFromStart(lat, lon, trackPoints, hintIndex = -1) {
 // ---------------------------------------------------------------------------
 
 /**
+ * Escapes regex metacharacters so a keyword is matched literally.
+ * @param {string} s
+ * @returns {string}
+ */
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+const keywordPatterns = new Map();
+
+/**
+ * Tests whether any keyword appears at the start of a word in `text`.
+ *
+ * Only a *leading* boundary is required. Requiring one on both sides would
+ * break real matches -- `camp` has to keep matching "Campground", and `hut`
+ * has to keep matching "huts" -- while a bare substring test lets short
+ * tokens fire inside unrelated words: `cg` inside "McGregor", `ranch` inside
+ * "Long Branch Trail Junction". A leading boundary rejects exactly those,
+ * because the false positives are the cases with a letter in front.
+ * @param {string} text - Haystack, already lowercased.
+ * @param {string[]} keywords
+ * @returns {boolean}
+ */
+function matchesKeyword(text, keywords) {
+  return keywords.some((kw) => {
+    let re = keywordPatterns.get(kw);
+    if (!re) {
+      re = new RegExp(`\\b${escapeRegex(kw)}`);
+      keywordPatterns.set(kw, re);
+    }
+    return re.test(text);
+  });
+}
+
+/**
  * Classifies a waypoint into a resource type based on its name and description.
  * @param {string} name
  * @param {string} [description]
@@ -260,7 +303,7 @@ export function classifyWaypoint(name, description = '') {
   const text = `${name} ${description}`.toLowerCase();
 
   for (const [type, keywords] of Object.entries(WAYPOINT_KEYWORDS)) {
-    if (keywords.some((kw) => text.includes(kw))) {
+    if (matchesKeyword(text, keywords)) {
       return type;
     }
   }
@@ -920,10 +963,11 @@ export function classifyOSMElement(tags) {
     'hotel',
     'motel',
   ];
-  if (resupplyKeywords.some((k) => nameDesc.includes(k))) return 'resupply';
+  if (matchesKeyword(nameDesc, resupplyKeywords)) return 'resupply';
 
-  const campKeywords = ['camp', 'campground', 'campsite', 'bivvy', 'bivy'];
-  if (campKeywords.some((k) => nameDesc.includes(k))) return 'camping';
+  // Shares WAYPOINT_KEYWORDS.camping rather than repeating it: the duplicate
+  // list here had already drifted, missing 'cg'.
+  if (matchesKeyword(nameDesc, WAYPOINT_KEYWORDS.camping)) return 'camping';
 
   return 'navigation';
 }
