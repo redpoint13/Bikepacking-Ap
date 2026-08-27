@@ -78,7 +78,7 @@ jobs:
           {
             echo "### Deployment skipped"
             echo ""
-            echo "\`CLOUDFLARE_API_TOKEN\` and \`CLOUDFLARE_ACCOUNT_ID\` are not set on this"
+            echo "\`CLOUDFLARE_API_TOKEN\` and \`CLOUDFLARE_ACCOUNT_ID\` are not both set on this"
             echo "repository, so there is nothing to deploy to. Lint, tests and the build"
             echo "all ran and are reported above."
             echo ""
