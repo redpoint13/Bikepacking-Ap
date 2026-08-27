@@ -352,7 +352,6 @@ describe('mergeResupplySources', () => {
     expect(stageStop.lat).not.toBe(jefferson.lat);
     expect(stageStop.lon).not.toBe(jefferson.lon);
   });
-
 });
 
 // ---------------------------------------------------------------------------

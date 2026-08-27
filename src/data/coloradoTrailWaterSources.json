@@ -65,11 +65,7 @@
     "elevationFt": 7613
   },
   {
-<<<<<<< HEAD
     "id": "ct-water-02-100xx-1",
-=======
-    "id": "ct-water-02-100xx",
->>>>>>> origin/main
     "name": "First Crossing Spring Creek Rd",
     "originalCode": "02-100XX",
     "description": "Colorado Trail water waypoint 02-100XX: First Crossing Spring Creek Rd",
@@ -3046,11 +3042,7 @@
     "elevationFt": 11614
   },
   {
-<<<<<<< HEAD
     "id": "ct-water-21-041wt-1",
-=======
-    "id": "ct-water-21-041wt",
->>>>>>> origin/main
     "name": "Stream (21-041WT)",
     "originalCode": "21-041WT",
     "description": "Colorado Trail water waypoint 21-041WT: Stream",
@@ -3921,11 +3913,7 @@
     "elevationFt": 10878
   },
   {
-<<<<<<< HEAD
     "id": "ct-water-25-147wt-1",
-=======
-    "id": "ct-water-25-147wt",
->>>>>>> origin/main
     "name": "Cross Cascade Creek on bridge",
     "originalCode": "25-147WT",
     "description": "Colorado Trail water waypoint 25-147WT: Cross Cascade Creek on bridge",
@@ -4588,11 +4576,7 @@
     "elevationFt": 10608
   },
   {
-<<<<<<< HEAD
     "id": "ct-water-w2-058wt-1",
-=======
-    "id": "ct-water-w2-058wt",
->>>>>>> origin/main
     "name": "Creek",
     "originalCode": "W2_058WT",
     "description": "Colorado Trail water waypoint W2_058WT: Creek",

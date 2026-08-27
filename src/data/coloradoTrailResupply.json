@@ -57,11 +57,7 @@
     "description": "CTR Master Log (mi 116.1): Jefferson town resupply at 38600 US Hwy 285 (general store, cafe, post office). NOTE: reported permanently closed as of 2025 — confirm before counting on it, as it is the only retail between Bailey and Fairplay.",
     "source": "curated",
     "reliability": 95,
-<<<<<<< HEAD
     "elevationFt": 9500
-=======
-    "elevationFt": 10295
->>>>>>> origin/main
   },
   {
     "id": "ct-resupply-fairplay",

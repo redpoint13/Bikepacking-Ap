@@ -1,19 +1,11 @@
 [
   {
     "id": "ct-indian-creek-cg",
-<<<<<<< HEAD
     "name": "Indian Creek Campground (USFS)",
     "lat": 39.3787,
     "lon": -105.10531,
     "type": "camping",
     "description": "USFS Indian Creek Campground with equestrian and tent sites (Segment 1).",
-=======
-    "name": "Indian Creek Campground",
-    "lat": 39.3787,
-    "lon": -105.10531,
-    "type": "camping",
-    "description": "USFS Indian Creek Campground with equestrian and tent sites.",
->>>>>>> origin/main
     "source": "curated",
     "tier": "official",
     "landManager": "USFS",
@@ -25,7 +17,6 @@
     "elevationFt": 7396
   },
   {
-<<<<<<< HEAD
     "id": "ct-south-platte-dispersed",
     "name": "South Platte River Dispersed Camps",
     "lat": 39.42,
@@ -43,27 +34,17 @@
     "elevationFt": 6100
   },
   {
-=======
->>>>>>> origin/main
     "id": "ct-former-cg-seg2",
     "name": "Former Campground Site (Segment 2)",
     "lat": 39.37951,
     "lon": -105.2393,
     "type": "camping",
-<<<<<<< HEAD
     "description": "Established dispersed camping area at former campground in Pike National Forest (Segment 2).",
-=======
-    "description": "Established dispersed camping area at former campground in Pike National Forest.",
->>>>>>> origin/main
     "source": "curated",
     "tier": "dispersed",
     "landManager": "USFS",
     "isDispersedLegal": true,
-<<<<<<< HEAD
     "reliability": 85,
-=======
-    "reliability": 80,
->>>>>>> origin/main
     "waterAvailable": "none",
     "waterDetails": "Dry camp — carry water from South Platte or Spring Creek",
     "fee": "Free",
@@ -71,19 +52,11 @@
   },
   {
     "id": "ct-meadows-cg-buffalo-creek",
-<<<<<<< HEAD
     "name": "Meadows Campground (Buffalo Creek, USFS)",
     "lat": 39.33962,
     "lon": -105.33613,
     "type": "camping",
     "description": "USFS Meadows Campground in Buffalo Creek recreation area (Segment 3).",
-=======
-    "name": "Meadows Campground (Buffalo Creek)",
-    "lat": 39.33962,
-    "lon": -105.33613,
-    "type": "camping",
-    "description": "USFS Meadows Campground in Buffalo Creek recreation area.",
->>>>>>> origin/main
     "source": "curated",
     "tier": "official",
     "landManager": "USFS",
@@ -95,7 +68,6 @@
     "elevationFt": 7419
   },
   {
-<<<<<<< HEAD
     "id": "ct-wellington-lake-cg",
     "name": "Wellington Lake Campground",
     "lat": 39.308,
@@ -181,18 +153,12 @@
     "elevationFt": 9400
   },
   {
-=======
->>>>>>> origin/main
     "id": "ct-janets-cabin",
     "name": "Janet's Cabin (10th Mountain Division)",
     "lat": 39.46517,
     "lon": -106.23128,
     "type": "camping",
-<<<<<<< HEAD
     "description": "10th Mountain Division Hut backcountry cabin near Copper Mountain / Guller Creek (Segment 8).",
-=======
-    "description": "10th Mountain Division Hut backcountry cabin near Copper Mountain / Guller Creek.",
->>>>>>> origin/main
     "source": "curated",
     "tier": "official",
     "landManager": "USFS",
@@ -205,19 +171,11 @@
   },
   {
     "id": "ct-camp-hale-memorial-cg",
-<<<<<<< HEAD
     "name": "Camp Hale Memorial Campground (USFS)",
     "lat": 39.42413,
     "lon": -106.29856,
     "type": "camping",
     "description": "USFS Camp Hale Memorial Campground near historic WWII training grounds (Segment 8).",
-=======
-    "name": "Camp Hale Memorial Campground",
-    "lat": 39.42413,
-    "lon": -106.29856,
-    "type": "camping",
-    "description": "USFS Camp Hale Memorial Campground near historic WWII training grounds.",
->>>>>>> origin/main
     "source": "curated",
     "tier": "official",
     "landManager": "USFS",
@@ -234,11 +192,7 @@
     "lat": 39.35913,
     "lon": -106.31975,
     "type": "camping",
-<<<<<<< HEAD
     "description": "10th Mountain Division backcountry hut near Tennessee Pass (Segment 9).",
-=======
-    "description": "10th Mountain Division backcountry hut near Tennessee Pass / Segment 9.",
->>>>>>> origin/main
     "source": "curated",
     "tier": "official",
     "landManager": "USFS",
@@ -247,7 +201,6 @@
     "waterAvailable": "natural",
     "waterDetails": "Stream / snowmelt (filter required)",
     "fee": "Fee / Reservation",
-<<<<<<< HEAD
     "elevationFt": 11370
   },
   {
@@ -359,41 +312,12 @@
     "lon": -106.25859,
     "type": "camping",
     "description": "Historic USFS trail shelter cabin in San Isabel National Forest (Segment 15).",
-=======
-    "elevationFt": 10533
-  },
-  {
-    "id": "ct-twin-lakes-yurt",
-    "name": "Twin Lakes CT Backcountry Yurt",
-    "lat": 39.09607,
-    "lon": -106.33772,
-    "type": "camping",
-    "description": "Backcountry yurt located near Twin Lakes / Segment 11.",
     "source": "curated",
     "tier": "official",
     "landManager": "USFS",
     "isDispersedLegal": true,
     "reliability": 90,
     "waterAvailable": "natural",
-    "waterDetails": "Lake / stream nearby (filter required)",
-    "fee": "Fee / Reservation",
-    "elevationFt": 9268
-  },
-  {
-    "id": "ct-marshall-pass-shelter-cabin",
-    "name": "Marshall Pass Shelter Cabin",
-    "lat": 38.4422,
-    "lon": -106.25859,
-    "type": "camping",
-    "description": "Historic USFS shelter cabin near Marshall Pass / Monarch Crest.",
->>>>>>> origin/main
-    "source": "curated",
-    "tier": "official",
-    "landManager": "USFS",
-    "isDispersedLegal": true,
-    "reliability": 90,
-    "waterAvailable": "natural",
-<<<<<<< HEAD
     "waterDetails": "Nearby spring / creek (filter required)",
     "fee": "Free",
     "elevationFt": 10078
@@ -473,24 +397,10 @@
     "lon": -107.28693,
     "type": "camping",
     "description": "Colorado Trail Foundation backcountry yurt in the San Juan Mountains (Segment 22).",
-=======
-    "waterDetails": "Intermittent natural spring / creek nearby (filter required)",
-    "fee": "Free",
-    "elevationFt": 11501
-  },
-  {
-    "id": "ct-colorado-trail-friends-yurt",
-    "name": "Colorado Trail Friends Yurt",
-    "lat": 37.91276,
-    "lon": -107.28693,
-    "type": "camping",
-    "description": "CT Yurt near Spring Creek Pass (Segment 22). Reservation / CT foundation.",
->>>>>>> origin/main
     "source": "curated",
     "tier": "official",
     "landManager": "USFS",
     "isDispersedLegal": true,
-<<<<<<< HEAD
     "reliability": 95,
     "waterAvailable": "natural",
     "waterDetails": "Nearby spring / creek (filter required)",
@@ -657,45 +567,12 @@
     "lon": -106.39628,
     "type": "camping",
     "description": "Historic mining cabin site along Collegiate West route.",
-=======
-    "reliability": 90,
-    "waterAvailable": "natural",
-    "waterDetails": "Natural spring / stream in valley (filter required)",
-    "fee": "Fee / Reservation",
-    "elevationFt": 11718
-  },
-  {
-    "id": "ct-collegiate-west-cabin",
-    "name": "Collegiate West Backcountry Cabin",
-    "lat": 39.03733,
-    "lon": -106.39628,
-    "type": "camping",
-    "description": "Historic backcountry cabin shelter along Collegiate West.",
-    "source": "curated",
-    "tier": "dispersed",
-    "landManager": "USFS",
-    "isDispersedLegal": true,
-    "reliability": 80,
-    "waterAvailable": "natural",
-    "waterDetails": "Nearby creek (filter required)",
-    "fee": "Free",
-    "elevationFt": 11180
-  },
-  {
-    "id": "ct-lake-ann-2-tent-site",
-    "name": "Lake Ann 2-Tent Site",
-    "lat": 39.00807,
-    "lon": -106.40405,
-    "type": "camping",
-    "description": "Established backcountry 2-tent site along Collegiate West trail near Lake Ann.",
->>>>>>> origin/main
     "source": "curated",
     "tier": "dispersed",
     "landManager": "USFS",
     "isDispersedLegal": true,
     "reliability": 85,
     "waterAvailable": "natural",
-<<<<<<< HEAD
     "waterDetails": "Nearby stream (filter required)",
     "fee": "Free",
     "elevationFt": 10892
@@ -716,10 +593,5 @@
     "waterDetails": "Nearby creek (filter required)",
     "fee": "Free",
     "elevationFt": 11374
-=======
-    "waterDetails": "Nearby stream / alpine creek (filter required)",
-    "fee": "Free",
-    "elevationFt": 11202
->>>>>>> origin/main
   }
 ]
