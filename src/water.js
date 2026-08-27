@@ -22,7 +22,16 @@ import { distanceFromStart, fetchOverpass, haversineDistance } from './gpx.js';
 const USGS_BASE = 'https://api.waterdata.usgs.gov/ogcapi/v0/collections/monitoring-locations/items';
 
 /** Sources within this many miles of the route are included. */
-const ROUTE_PROXIMITY_MI = 1.0;
+/**
+ * Water sources within this many miles of the route are kept.
+ *
+ * Must not be tighter than PLAN_DEFAULTS.maxDetourMi, or enrichment throws away
+ * sources the planner is willing to send a rider to: at 1.0 against a 1.5 mile
+ * detour allowance, a third of the usable sources on a Colorado Trail corridor
+ * were discarded before planning ever saw them (12 kept of 18 in range).
+ * waterEnrichmentRadius in water.test.js pins the two together.
+ */
+export const ROUTE_PROXIMITY_MI = 1.5;
 
 /** Sources within this distance of each other are considered the same. */
 const DEDUP_THRESHOLD_MI = 0.15;

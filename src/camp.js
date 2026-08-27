@@ -9,7 +9,7 @@ import { distanceFromStart, fetchOverpass, haversineDistance } from './gpx.js';
 const BLM_SMA_LAYER =
   'https://gis.blm.gov/arcgis/rest/services/lands/BLM_Natl_SMA_Cached_with_PriUnk/MapServer/1';
 
-const ROUTE_PROXIMITY_MI = 2.0;
+export const ROUTE_PROXIMITY_MI = 2.0;
 const DEDUP_THRESHOLD_MI = 0.1;
 const SAMPLE_STEP = 20;
 
