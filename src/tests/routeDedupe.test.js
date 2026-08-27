@@ -2,9 +2,12 @@ import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   clearRoute,
+  deleteRouteFromLibrary,
   findRouteByContent,
   getAllRoutes,
+  getRouteById,
   loadEnrichment,
+  openDB,
   routeFingerprint,
   saveEnrichment,
   saveRouteToLibrary,
@@ -22,10 +25,7 @@ const GPX_A = '<gpx><trk><name>A</name><trkseg><trkpt lat="39" lon="-106"/></trk
 const GPX_B = '<gpx><trk><name>B</name><trkseg><trkpt lat="38" lon="-105"/></trkseg></trk></gpx>';
 
 beforeEach(async () => {
-  for (const r of await getAllRoutes()) {
-    const { deleteRouteFromLibrary } = await import('../storage.js');
-    await deleteRouteFromLibrary(r.id);
-  }
+  for (const r of await getAllRoutes()) await deleteRouteFromLibrary(r.id);
   await clearRoute().catch(() => {});
 });
 
@@ -98,12 +98,9 @@ describe('re-importing the same file', () => {
 });
 
 describe('findRouteByContent', () => {
-  it('finds a record saved before fingerprints existed', async () => {
-    const id = await saveRouteToLibrary({ name: 'CT', filename: 'ct.gpx', gpxText: GPX_A });
-    // Simulate a legacy record by matching on recomputed content.
-    const found = await findRouteByContent(GPX_A);
-    expect(found?.id).toBe(id);
-  });
+  // The v2 -> v3 fingerprint backfill is covered in storageMigrationV3.test.js:
+  // deleteDatabase blocks while openDB's connections are open, so it needs a
+  // module context no other test has touched.
 
   it('returns null for unknown content or no content', async () => {
     expect(await findRouteByContent(GPX_B)).toBeNull();

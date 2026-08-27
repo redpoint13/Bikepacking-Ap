@@ -10,7 +10,7 @@
 import { describeError } from './errorBoundary.js';
 
 const DB_NAME = 'bpnav-v1';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_NAME = 'route';
 const ROUTES_STORE = 'routes';
 const ROUTE_KEY = 'current';
@@ -40,6 +40,25 @@ export function openDB() {
       if (!db.objectStoreNames.contains(ROUTES_STORE)) {
         db.createObjectStore(ROUTES_STORE, { keyPath: 'id' });
       }
+
+      // v3: index the content fingerprint. Without it, recognising an already
+      // imported route meant reading every record — and each carries its whole
+      // GPX text, so a large library would hold several megabytes in memory on
+      // every import, which is the cost the fingerprint exists to avoid.
+      const routesStore = e.target.transaction.objectStore(ROUTES_STORE);
+      if (!routesStore.indexNames.contains('fingerprint')) {
+        routesStore.createIndex('fingerprint', 'fingerprint', { unique: false });
+      }
+      // Backfill records saved before fingerprints existed, so the index covers
+      // the whole library rather than only routes imported from now on.
+      routesStore.openCursor().onsuccess = (ev) => {
+        const cursor = ev.target.result;
+        if (!cursor) return;
+        if (!cursor.value.fingerprint && cursor.value.gpxText) {
+          cursor.update({ ...cursor.value, fingerprint: routeFingerprint(cursor.value.gpxText) });
+        }
+        cursor.continue();
+      };
     };
 
     req.onsuccess = async (e) => {
@@ -194,8 +213,18 @@ export function routeFingerprint(text) {
 export async function findRouteByContent(gpxText) {
   if (!gpxText) return null;
   const fingerprint = routeFingerprint(gpxText);
-  const routes = await getAllRoutes();
-  return routes.find((r) => (r.fingerprint ?? routeFingerprint(r.gpxText)) === fingerprint) ?? null;
+  const db = await openDB();
+  return new Promise((resolve) => {
+    const tx = db.transaction(ROUTES_STORE, 'readonly');
+    const store = tx.objectStore(ROUTES_STORE);
+    if (!store.indexNames.contains('fingerprint')) {
+      resolve(null);
+      return;
+    }
+    const req = store.index('fingerprint').get(fingerprint);
+    req.onsuccess = (e) => resolve(e.target.result ?? null);
+    req.onerror = () => resolve(null);
+  });
 }
 
 export async function saveRouteToLibrary(routeData) {
@@ -225,7 +254,10 @@ export async function saveRouteToLibrary(routeData) {
     fingerprint: routeFingerprint(routeData.gpxText),
     totalDistanceMiles: routeData.totalDistanceMiles || 0,
     waypoints,
-    options: routeData.options || existing?.options || null,
+    // Explicitly checking undefined, not `||` or `??`: both treat null as
+    // absent, so a caller passing null to clear the options would silently get
+    // the stored ones back. Undefined means "say nothing"; null means "clear".
+    options: routeData.options !== undefined ? routeData.options : (existing?.options ?? null),
     savedAt: routeData.savedAt || Date.now(),
   };
 
