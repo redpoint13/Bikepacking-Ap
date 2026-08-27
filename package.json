@@ -14,7 +14,8 @@
     "check": "biome check ./src",
     "sync:android": "vite build && cap sync android",
     "open:android": "cap open android",
-    "build:android": "vite build && cap sync android"
+    "build:android": "vite build && cap sync android",
+    "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.2",
@@ -32,6 +33,7 @@
     "fake-indexeddb": "^6.0.0",
     "jsdom": "^25.0.0",
     "playwright": "^1.62.1",
+    "typescript": "^7.0.2",
     "vite": "^7.3.6",
     "vite-plugin-pwa": "^1.3.0",
     "vitest": "^4.1.9"

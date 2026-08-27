@@ -324,6 +324,14 @@ function getText(el, tag) {
  * @yields {number} Progress fraction
  * @returns {RouteContext}
  *
+ * These typedefs are load-bearing, not decoration. A checker can only report
+ * that a producer forgot a field if the field is declared here — and worse, an
+ * *undeclared* property on a returned object literal raises an excess-property
+ * error that SUPPRESSES the missing-property error on the same literal. That is
+ * how parseRideWithGPS came to omit startPoint undetected: it also returned an
+ * undeclared `source`, which masked the real fault. Declare what the code
+ * actually sets, or the checking is worse than useless.
+ *
  * @typedef {Object} Waypoint
  * @property {string} id
  * @property {number} lat
@@ -331,8 +339,38 @@ function getText(el, tag) {
  * @property {string} name
  * @property {string} description
  * @property {'water' | 'resupply' | 'camping' | 'navigation'} type
- * @property {number} reliability     - 0–100 (enriched by data layer in Phase 2)
+ * @property {number | null} reliability  - 0–100; null when nothing is known
  * @property {number} distanceFromStartMi  - Along-track miles from route start
+ * @property {number} [offCourseDistanceMi] - Miles from the route line
+ * @property {string} [source]            - 'usgs' | 'osm' | 'synthetic' | importer
+ * @property {string} [tags]              - Raw OSM tags, where carried
+ *
+ * Camp-specific, set by camp.js and read by planning:
+ * @property {'official' | 'dispersed' | null} [tier]
+ * @property {string} [campTier]
+ * @property {'potable' | 'natural' | 'none' | 'unknown'} [waterAvailable]
+ * @property {string} [waterDetails]
+ * @property {string | null} [fee]
+ * @property {string} [landManager]
+ * @property {boolean} [isDispersedLegal] - May one pitch anywhere on this land
+ *
+ * Water-specific, set by water.js:
+ * @property {string} [seasonalStatus]
+ *
+ * Resupply-specific, set by resupply.js and enrichment.js:
+ * @property {string} [resupplyCategory] - 'grocery' | 'cstore' | 'restaurant' | 'none'
+ * @property {string} [category]         - Legacy name, still in cached waypoints
+ * @property {string} [hours]
+ * @property {string | null} [phone]
+ * @property {string} [notes]
+ * @property {'planned' | 'optional' | 'skipped'} [stopState]
+ *
+ * Planner- and annotation-set:
+ * @property {boolean} [isSynthetic]      - Invented by the planner, not a real site
+ * @property {boolean} [needsSiteSelection] - A target mile, not a known campsite
+ * @property {string} [wilderness]        - Name of the Wilderness Area containing it
+ * @property {boolean} [bikeAccessible]   - False when a bicycle may not legally reach it
+ * @property {number} [_absDistMi]        - Pre-offset distance, kept by applyStartOffset
  *
  * @typedef {Object} RouteContext
  * @property {string} name
@@ -344,6 +382,10 @@ function getText(el, tag) {
  * @property {number} startOffsetMi  - Miles along the route where the rider starts (0 = true start)
  * @property {boolean} isLoop        - True when start and end are within 1 mile of each other
  * @property {Object} metadata       - Route-specific metadata (forced stops, etc.)
+ * @property {string} [source]       - 'gpx' | 'ridewithgps' | 'komoot'
+ * @property {Object} [difficulty]   - calculateRouteDifficulty output
+ * @property {number} [waypointsRevision] - Bumped by markWaypointsChanged; the plan memo key
+ * @property {Array<{name: string, rings: number[][][]}>} [wildernessAreas]
  */
 function* _parseGPXSteps(xmlString) {
   // Yield before the (atomic, unchunkable) XML parse so callers that render a

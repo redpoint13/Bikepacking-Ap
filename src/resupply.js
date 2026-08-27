@@ -275,7 +275,11 @@ export function mergeResupplySources(route, osmElements) {
       description: tags.note ?? tags.description ?? '',
       type: 'resupply',
       source: 'osm',
-      category: cat?.id ?? 'other',
+      // resupplyCategory is what plan.js reads. This wrote `category`, so the
+      // category derived from OSM tags never reached the planner, which fell
+      // back to guessing from the shop's name — a supermarket read as a
+      // convenience store carries a different amount of food.
+      resupplyCategory: cat?.id ?? 'other',
       reliability: osmResupplyReliability(tags),
       distanceFromStartMi: distanceFromStart(lat, lon, trackPoints),
     });

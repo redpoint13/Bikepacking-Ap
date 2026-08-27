@@ -271,7 +271,8 @@ export function generateStopChecklists(route, plan) {
         Number.isFinite(rawOz) && rawOz > 0 ? rawOz : Math.round(waterLegDist * ozPerMile);
       const neededLiters = (neededOz * 0.0295735).toFixed(1);
 
-      const isPotable = stop.waterAvailable === 'potable' || stop.drinkingWater === 'yes';
+      // stop.drinkingWater was never set by anything; waterAvailable is the field.
+      const isPotable = stop.waterAvailable === 'potable';
       const isNatural =
         stop.waterAvailable === 'natural' ||
         stop.waterAvailable === 'stream' ||

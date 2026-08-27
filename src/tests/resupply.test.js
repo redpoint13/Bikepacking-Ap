@@ -255,7 +255,7 @@ describe('mergeResupplySources', () => {
     }
   });
 
-  it('includes category and reliability on enriched waypoints', () => {
+  it('exposes the OSM-derived category under the name plan.js reads', () => {
     const osmEl = {
       id: 55555,
       type: 'node',
@@ -266,7 +266,7 @@ describe('mergeResupplySources', () => {
     const merged = mergeResupplySources(route, [osmEl]);
     const added = merged.find((w) => w.id === 'osm-resupply-55555');
     expect(added).toBeDefined();
-    expect(added.category).toBe('outdoor');
+    expect(added.resupplyCategory).toBe('outdoor');
     expect(added.reliability).toBe(85);
   });
 
@@ -287,7 +287,7 @@ describe('mergeResupplySources', () => {
     const merged = mergeResupplySources(route, [weirdEl]);
     const added = merged.find((w) => w.id === 'osm-resupply-77777');
     expect(added).toBeDefined();
-    expect(added.category).toBe('other');
+    expect(added.resupplyCategory).toBe('other');
     expect(added.reliability).toBe(60);
   });
 });
