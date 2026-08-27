@@ -53,10 +53,12 @@ import {
   clearEnrichment,
   clearPlanOptions,
   exportPlanBundle,
+  getPersonalWaypoints,
   loadEnrichment,
   loadPlanOptions,
   loadRoute,
   saveEnrichment,
+  savePersonalWaypoint,
   savePlanOptions,
   saveRoute,
 } from './storage.js';
@@ -733,6 +735,7 @@ function wireEvents(container) {
         kickoffCampEnrichment(container, route);
         kickoffResupplyEnrichment(container, route);
         kickoffWildernessAnnotation(container, route);
+        applyPersonalWaypoints(container, route);
       },
       onUploadGPX: async (file, { keepWaypoints = false } = {}) => {
         setLoadingState(container, true);
@@ -791,6 +794,7 @@ function wireEvents(container) {
             kickoffCampEnrichment(container, route);
             kickoffResupplyEnrichment(container, route);
             kickoffWildernessAnnotation(container, route);
+            applyPersonalWaypoints(container, route);
           }
         } catch (err) {
           showError(container, err);
@@ -824,6 +828,7 @@ function wireEvents(container) {
             kickoffCampEnrichment(container, route);
             kickoffResupplyEnrichment(container, route);
             kickoffWildernessAnnotation(container, route);
+            applyPersonalWaypoints(container, route);
           }
         } catch (err) {
           showError(container, err);
@@ -903,6 +908,7 @@ function wireEvents(container) {
       kickoffCampEnrichment(container, route);
       kickoffResupplyEnrichment(container, route);
       kickoffWildernessAnnotation(container, route);
+      applyPersonalWaypoints(container, route);
     } catch (err) {
       console.error('[BPNav] Import failed:', err);
       showError(container, err);
@@ -942,6 +948,7 @@ function wireEvents(container) {
       kickoffCampEnrichment(container, route);
       kickoffResupplyEnrichment(container, route);
       kickoffWildernessAnnotation(container, route);
+      applyPersonalWaypoints(container, route);
     } catch (err) {
       console.error('[BPNav] Demo load failed:', err);
       showError(container, `Demo load failed: ${describeError(err)}`);
@@ -980,6 +987,7 @@ function wireEvents(container) {
       kickoffCampEnrichment(container, route);
       kickoffResupplyEnrichment(container, route);
       kickoffWildernessAnnotation(container, route);
+      applyPersonalWaypoints(container, route);
     } catch (err) {
       console.error('[BPNav] URL import failed:', err);
       errEl.textContent = describeError(err);
@@ -1220,6 +1228,15 @@ function wireEvents(container) {
       distanceFromStartMi: result.distanceFromStartMi,
       offCourseDistanceMi: result.offCourseDistanceMi,
     };
+
+    // A place marked personal is stored separately too, so it comes back on
+    // every route that passes near it rather than only this one.
+    if (result.isPersonal) {
+      customWp.isPersonal = true;
+      savePersonalWaypoint(customWp).catch((err) =>
+        console.warn('[BPNav] Could not save personal waypoint:', describeError(err)),
+      );
+    }
 
     currentRoute.waypoints.push(customWp);
     currentRoute.waypoints.sort((a, b) => a.distanceFromStartMi - b.distanceFromStartMi);
@@ -1487,6 +1504,7 @@ function applyRoute(container, route, skipEnrichment = false) {
     kickoffCampEnrichment(container, route);
     kickoffResupplyEnrichment(container, route);
     kickoffWildernessAnnotation(container, route);
+    applyPersonalWaypoints(container, route);
   }
 
   updateStatusChip(container, route);
@@ -1861,6 +1879,7 @@ async function tryRestoreRoute(container) {
           kickoffCampEnrichment(container, route);
           kickoffResupplyEnrichment(container, route);
           kickoffWildernessAnnotation(container, route);
+          applyPersonalWaypoints(container, route);
           return;
         }
       } catch (_) {}
@@ -1903,6 +1922,7 @@ async function tryRestoreRoute(container) {
     kickoffCampEnrichment(container, route);
     kickoffResupplyEnrichment(container, route);
     kickoffWildernessAnnotation(container, route);
+    applyPersonalWaypoints(container, route);
   } catch (err) {
     console.warn('[BPNav] Could not restore saved route:', describeError(err));
   }
@@ -2043,6 +2063,51 @@ function carryWaypointsOnto(route, previous) {
  * @param {HTMLElement} container
  * @param {import('./gpx.js').RouteContext} route
  */
+/**
+ * Projects the rider's personal places onto the route that just loaded.
+ *
+ * They are stored without route-relative fields, so distance along the route and
+ * distance off it are computed here against this track — the same rebase a route
+ * swap needs, for the same reason: those numbers are meaningless off the track
+ * they were measured on.
+ *
+ * A place far from this route is left out rather than dropped from the store; it
+ * simply does not apply here, and will apply again on a route that passes it.
+ *
+ * @param {HTMLElement} container
+ * @param {import('./gpx.js').RouteContext} route
+ */
+async function applyPersonalWaypoints(container, route) {
+  try {
+    const places = await getPersonalWaypoints();
+    if (!places.length) return;
+    // keepUserPlaced: false — these have user- ids, but they are held in their
+    // own store, so leaving one out is not losing it. Without this a place in
+    // Colorado would be pinned onto an Arizona route.
+    const { kept } = rebaseWaypointsOntoTrack(places, route.trackPoints, {
+      keepUserPlaced: false,
+    });
+    const already = new Set(route.waypoints.map((w) => w.id));
+    const toAdd = kept.filter((w) => !already.has(w.id));
+    if (!toAdd.length) return;
+
+    route.waypoints = [...route.waypoints, ...toAdd].sort(
+      (a, b) => a.distanceFromStartMi - b.distanceFromStartMi,
+    );
+    markWaypointsChanged(route);
+    console.info(
+      `[BPNav] ${toAdd.length} of ${places.length} personal waypoint(s) apply to this route.`,
+    );
+    updateResourceCards(container, route);
+    updatePlanningView(container.querySelector('#planning-view'), route, planOptions);
+    updateRouteStats(container, route, planOptions);
+    syncMapState();
+    saveEnrichment(route.waypoints).catch(() => {});
+  } catch (err) {
+    console.warn('[BPNav] Could not apply personal waypoints:', describeError(err));
+  }
+}
+
 async function kickoffWildernessAnnotation(container, route) {
   try {
     const areas = await fetchWildernessAreas(route.bounds);

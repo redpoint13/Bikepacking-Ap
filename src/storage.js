@@ -16,6 +16,7 @@ const ROUTES_STORE = 'routes';
 const ROUTE_KEY = 'current';
 const ACTIVE_ID_KEY = 'active-route-id';
 const ENRICHMENT_KEY = 'current-enrichment';
+const PERSONAL_WAYPOINTS_KEY = 'personal-waypoints';
 const OPTIONS_KEY = 'current-options';
 const METADATA_KEY = 'current-metadata';
 
@@ -320,6 +321,70 @@ export async function clearRouteMetadata() {
     const tx = db.transaction(STORE_NAME, 'readwrite');
     tx.objectStore(STORE_NAME).delete(METADATA_KEY);
     tx.oncomplete = () => resolve();
+    tx.onerror = (e) => reject(e.target.error);
+  });
+}
+
+/**
+ * Waypoints a rider keeps across every route — home, a trailhead, a water cache.
+ *
+ * Enrichment and route records are both scoped to one route, so a place that
+ * matters regardless of route had nowhere to live and had to be re-added each
+ * time. These are stored once and re-applied to whatever route is loaded, in
+ * the same way wilderness boundaries are: held separately, projected on.
+ *
+ * @returns {Promise<import('./gpx.js').Waypoint[]>}
+ */
+export async function getPersonalWaypoints() {
+  const db = await openDB();
+  return new Promise((resolve) => {
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const req = tx.objectStore(STORE_NAME).get(PERSONAL_WAYPOINTS_KEY);
+    req.onsuccess = (e) => resolve(e.target.result?.waypoints ?? []);
+    req.onerror = () => resolve([]);
+  });
+}
+
+/**
+ * Adds or replaces a personal waypoint, keyed by id.
+ * @param {import('./gpx.js').Waypoint} waypoint
+ * @returns {Promise<import('./gpx.js').Waypoint[]>} the full list afterwards
+ */
+export async function savePersonalWaypoint(waypoint) {
+  if (!waypoint?.id) return getPersonalWaypoints();
+  const existing = await getPersonalWaypoints();
+  // Store the place, not its position on the route that happened to be loaded:
+  // distanceFromStartMi and offCourseDistanceMi are meaningless off that track
+  // and are recomputed when the waypoint is applied to a route.
+  const { distanceFromStartMi, offCourseDistanceMi, ...place } = waypoint;
+  const next = [...existing.filter((w) => w.id !== waypoint.id), place];
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).put(
+      { waypoints: next, savedAt: Date.now() },
+      PERSONAL_WAYPOINTS_KEY,
+    );
+    tx.oncomplete = () => resolve(next);
+    tx.onerror = (e) => reject(e.target.error);
+  });
+}
+
+/**
+ * Removes a personal waypoint.
+ * @param {string} id
+ * @returns {Promise<import('./gpx.js').Waypoint[]>} the full list afterwards
+ */
+export async function deletePersonalWaypoint(id) {
+  const next = (await getPersonalWaypoints()).filter((w) => w.id !== id);
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).put(
+      { waypoints: next, savedAt: Date.now() },
+      PERSONAL_WAYPOINTS_KEY,
+    );
+    tx.oncomplete = () => resolve(next);
     tx.onerror = (e) => reject(e.target.error);
   });
 }
