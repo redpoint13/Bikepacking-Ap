@@ -78,7 +78,7 @@
     "elevationFt": 7640
   },
   {
-    "id": "ct-water-02-100xx",
+    "id": "ct-water-02-100xx-2",
     "name": "Cross Spring Creek Rd",
     "originalCode": "02-100XX",
     "description": "Colorado Trail water waypoint 02-100XX: Cross Spring Creek Rd",
@@ -3055,7 +3055,7 @@
     "elevationFt": 11556
   },
   {
-    "id": "ct-water-21-041wt",
+    "id": "ct-water-21-041wt-2",
     "name": "MINERAL CR CUTOFF",
     "originalCode": "21-041WT",
     "description": "Colorado Trail water waypoint 21-041WT: MINERAL CR CUTOFF",
@@ -3926,7 +3926,7 @@
     "elevationFt": 10853
   },
   {
-    "id": "ct-water-25-147wt",
+    "id": "ct-water-25-147wt-2",
     "name": "Cascade Creek (Flowing 2018)",
     "originalCode": "25-147WT",
     "description": "Colorado Trail water waypoint 25-147WT: Cascade Creek (Flowing 2018)",
@@ -4589,7 +4589,7 @@
     "elevationFt": 10590
   },
   {
-    "id": "ct-water-w2-058wt",
+    "id": "ct-water-w2-058wt-2",
     "name": "Clear Creek",
     "originalCode": "W2_058WT",
     "description": "Colorado Trail water waypoint W2_058WT: Clear Creek",

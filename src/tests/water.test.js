@@ -5,7 +5,6 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { haversineDistance, parseGPX } from '../gpx.js';
 import {
-  CURATED_WATER_SOURCES,
   USGS_DRINKABLE_SITE_TYPES,
   fetchOSMWater,
   fetchUSGSFlowData,

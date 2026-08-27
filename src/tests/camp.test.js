@@ -4,7 +4,6 @@
 
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import {
-  CURATED_CAMP_SOURCES,
   fetchOSMCampSites,
   isNearRoute,
   mergeCampSources,

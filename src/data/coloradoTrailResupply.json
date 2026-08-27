@@ -38,11 +38,11 @@
   {
     "id": "ct-resupply-stage-stop",
     "name": "Stage Stop Saloon & Store",
-    "lat": 39.41363,
-    "lon": -105.75492,
+    "lat": 39.2816,
+    "lon": -105.72592,
     "type": "resupply",
     "resupplyCategory": "restaurant",
-    "description": "CTR Master Log (mi 99.2): Saloon & general store off Kenosha Pass access / Rollinsville route.",
+    "description": "CTR Master Log (mi 99.2): Saloon & general store at 53 Stagestop Rd, Jefferson. NOTE: the log mile does not reconcile with this location — verify before relying on it.",
     "source": "curated",
     "reliability": 85,
     "elevationFt": 9097
@@ -50,11 +50,11 @@
   {
     "id": "ct-resupply-jefferson",
     "name": "Jefferson Market & Real Food Cafe",
-    "lat": 39.41363,
-    "lon": -105.75492,
+    "lat": 39.377507,
+    "lon": -105.799837,
     "type": "resupply",
     "resupplyCategory": "grocery",
-    "description": "CTR Master Log (mi 116.1): Jefferson town resupply on Hwy 285 (general store, cafe, post office).",
+    "description": "CTR Master Log (mi 116.1): Jefferson town resupply at 38600 US Hwy 285 (general store, cafe, post office). NOTE: reported permanently closed as of 2025 — confirm before counting on it, as it is the only retail between Bailey and Fairplay.",
     "source": "curated",
     "reliability": 95,
     "elevationFt": 10295
