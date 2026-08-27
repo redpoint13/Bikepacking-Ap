@@ -24,6 +24,7 @@ import {
   osmElementLabel,
   osmElementReliability,
   parseGPXAsync,
+  rebaseWaypointsOntoTrack,
   waypointsOfType,
 } from './gpx.js';
 import { importFromURL } from './import.js';
@@ -733,8 +734,10 @@ function wireEvents(container) {
         kickoffResupplyEnrichment(container, route);
         kickoffWildernessAnnotation(container, route);
       },
-      onUploadGPX: async (file) => {
+      onUploadGPX: async (file, { keepWaypoints = false } = {}) => {
         setLoadingState(container, true);
+        // Captured before the new route replaces currentRoute.
+        const carriedOver = keepWaypoints ? (currentRoute?.waypoints ?? []) : null;
         try {
           const text = await file.text();
           if (file.name.endsWith('.json')) {
@@ -767,6 +770,11 @@ function wireEvents(container) {
             }
           }
           const route = await parseGPXAsync(text);
+          // Carrying markers over means keeping them: enrichment replaces every
+          // waypoint of its type wholesale, so running it here would discard the
+          // very markers the rider asked to keep. Skipping it also avoids
+          // applyRoute's clearEnrichment racing the save below.
+          const carry = carriedOver?.length ? carryWaypointsOnto(route, carriedOver) : null;
           const routeId = await saveRouteToLibrary({
             name: file.name.replace(/\.gpx$/i, ''),
             filename: file.name,
@@ -775,11 +783,21 @@ function wireEvents(container) {
             waypoints: route.waypoints || [],
           });
           await setActiveRouteId(routeId);
-          applyRoute(container, route);
-          kickoffWaterEnrichment(container, route);
-          kickoffCampEnrichment(container, route);
-          kickoffResupplyEnrichment(container, route);
-          kickoffWildernessAnnotation(container, route);
+          applyRoute(container, route, Boolean(carry));
+          if (carry) {
+            const droppedNote = carry.dropped
+              ? `; dropped ${carry.dropped} now more than 1.5 mi off it.`
+              : '. Nothing was off-route.';
+            const plural = carry.kept === 1 ? '' : 's';
+            const note = `Kept ${carry.kept} waypoint${plural} on the new route${droppedNote}`;
+            console.info(`[BPNav] ${note}`);
+            showNotice(container, note);
+          } else {
+            kickoffWaterEnrichment(container, route);
+            kickoffCampEnrichment(container, route);
+            kickoffResupplyEnrichment(container, route);
+            kickoffWildernessAnnotation(container, route);
+          }
         } catch (err) {
           showError(container, err);
         } finally {
@@ -1767,6 +1785,29 @@ function setLoadingState(container, loading) {
 }
 
 /** @param {HTMLElement} container @param {string} message */
+/**
+ * Reports something that went right but changed the plan, so the rider is not
+ * left guessing why the map looks different. Same lifetime and placement as
+ * showError, and equally non-throwing: it runs on paths where the dashboard may
+ * not have rendered.
+ *
+ * @param {HTMLElement} container
+ * @param {string} message
+ */
+function showNotice(container, message) {
+  if (!container) return;
+  container.querySelector('.parse-notice')?.remove();
+
+  const note = document.createElement('p');
+  note.className = 'parse-notice';
+  note.setAttribute('role', 'status');
+  note.textContent = message;
+  const host = container.querySelector('.dashboard') ?? container;
+  host.prepend(note);
+
+  setTimeout(() => note.remove(), 8000);
+}
+
 function showError(container, message) {
   if (!container) return;
   // Remove any previous error
@@ -1958,6 +1999,30 @@ async function kickoffResupplyEnrichment(container, route) {
  * @param {HTMLElement} container
  * @param {import('./gpx.js').RouteContext} route
  */
+/**
+ * Carries the current route's waypoints onto a newly loaded track.
+ *
+ * Their distances are measured against the old GPX, so they are recomputed
+ * here and anything now outside the corridor is dropped — a marker nine miles
+ * off the new line is not a source you can ride to. Returns a summary so the
+ * caller can say what survived rather than silently changing the plan.
+ *
+ * @param {import('./gpx.js').RouteContext} route  the newly parsed route
+ * @param {import('./gpx.js').Waypoint[]} previous
+ * @returns {{kept: number, dropped: number}}
+ */
+function carryWaypointsOnto(route, previous) {
+  const { kept, dropped } = rebaseWaypointsOntoTrack(previous ?? [], route.trackPoints);
+  if (kept.length) {
+    route.waypoints = [...route.waypoints, ...kept].sort(
+      (a, b) => a.distanceFromStartMi - b.distanceFromStartMi,
+    );
+    markWaypointsChanged(route);
+    saveEnrichment(route.waypoints).catch(() => {});
+  }
+  return { kept: kept.length, dropped: dropped.length };
+}
+
 async function kickoffWildernessAnnotation(container, route) {
   try {
     const areas = await fetchWildernessAreas(route.bounds);

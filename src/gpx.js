@@ -507,6 +507,62 @@ export async function parseGPXAsync(xmlString, { onProgress } = {}) {
   return step.value;
 }
 
+/**
+ * Recomputes waypoints against a different track, for swapping the GPX under an
+ * existing set of markers.
+ *
+ * A waypoint is not just a coordinate: `distanceFromStartMi` and
+ * `offCourseDistanceMi` are measured against the track it was created with.
+ * Carry them onto a different GPX unchanged and every mile marker lies — a
+ * spring at "mile 47" may sit at mile 52 on the new line, or nine miles off it —
+ * which silently corrupts water carries and day planning. That is worse than
+ * losing the waypoints, because the plan still looks reasonable.
+ *
+ * Anything now further from the route than the enrichment corridor is dropped:
+ * a marker that far off is no longer a source you can ride to. User-created
+ * waypoints are kept regardless of distance, because they were placed by hand
+ * and are not reproducible — they are returned with their true off-course
+ * distance so the caller can report it. Synthetic camps are discarded outright;
+ * the planner regenerates them for the new route.
+ *
+ * @param {import('./gpx.js').Waypoint[]} waypoints
+ * @param {Array<[number, number, number]>} trackPoints
+ * @param {{maxOffCourseMi?: number}} [options]
+ * @returns {{kept: import('./gpx.js').Waypoint[], dropped: import('./gpx.js').Waypoint[]}}
+ */
+export function rebaseWaypointsOntoTrack(waypoints, trackPoints, { maxOffCourseMi = 1.5 } = {}) {
+  const kept = [];
+  const dropped = [];
+  if (!Array.isArray(waypoints) || !trackPoints?.length) return { kept, dropped };
+
+  const cumulative = getOrCreateCumulativeDistances(trackPoints);
+
+  for (const wp of waypoints) {
+    if (!wp || !Number.isFinite(wp.lat) || !Number.isFinite(wp.lon)) continue;
+    // The planner rebuilds these for whatever the new route needs.
+    if (wp.isSynthetic || wp.id?.startsWith('synth-')) continue;
+
+    const index = nearestTrackPointIndex(wp.lat, wp.lon, trackPoints);
+    const nearest = trackPoints[index];
+    const offCourseDistanceMi = haversineDistance(wp.lat, wp.lon, nearest[0], nearest[1]);
+    const rebased = {
+      ...wp,
+      distanceFromStartMi: cumulative[index] ?? 0,
+      offCourseDistanceMi,
+    };
+
+    const isUserPlaced = wp.id?.startsWith('user-');
+    if (offCourseDistanceMi > maxOffCourseMi && !isUserPlaced) {
+      dropped.push(rebased);
+      continue;
+    }
+    kept.push(rebased);
+  }
+
+  kept.sort((a, b) => a.distanceFromStartMi - b.distanceFromStartMi);
+  return { kept, dropped };
+}
+
 // ---------------------------------------------------------------------------
 // Start offset adjustment
 // ---------------------------------------------------------------------------
