@@ -1,0 +1,93 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "monitoring_location_name": "CALLY SPRING (IG-CAL), NR BRECKENRIDGE, CO",
+        "monitoring_location_number": "392804106014801",
+        "site_type_code": "SP"
+      },
+      "id": "USGS-392804106014801",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -106.02991666666667,
+          39.46769444444445
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "monitoring_location_name": "WILLARD ADIT 1 (IG-13), NR BRECKENRIDGE, CO",
+        "monitoring_location_number": "392807106014401",
+        "site_type_code": "SP"
+      },
+      "id": "USGS-392807106014401",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -106.02877777777778,
+          39.468722222222226
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "monitoring_location_name": "SP 1 ALONG IL GULCH RD (ILL-1080), NR BRECKENRIDGE",
+        "monitoring_location_number": "392809106012602",
+        "site_type_code": "SP"
+      },
+      "id": "USGS-392809106012602",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -106.02386111111112,
+          39.469277777777776
+        ]
+      }
+    }
+  ],
+  "numberReturned": 3,
+  "links": [
+    {
+      "rel": "next",
+      "href": "https://api.waterdata.usgs.gov/ogcapi/v0/collections/monitoring-locations/items?cursor=VVNHUy0zOTI4MDkxMDYwMTI2MDI&bbox=-106.2,39.4,-105.8,39.7&limit=3&properties=monitoring_location_name,monitoring_location_number,site_type_code&site_type_code=SP&f=json",
+      "type": "application/geo+json",
+      "title": "Items (next)"
+    },
+    {
+      "type": "application/geo+json",
+      "rel": "self",
+      "title": "This document as GeoJSON",
+      "href": "https://api.waterdata.usgs.gov/ogcapi/v0/collections/monitoring-locations/items?f=json&bbox=-106.2,39.4,-105.8,39.7&limit=3&properties=monitoring_location_name,monitoring_location_number,site_type_code&site_type_code=SP"
+    },
+    {
+      "rel": "alternate",
+      "type": "application/ld+json",
+      "title": "This document as RDF (JSON-LD)",
+      "href": "https://api.waterdata.usgs.gov/ogcapi/v0/collections/monitoring-locations/items?f=jsonld&bbox=-106.2,39.4,-105.8,39.7&limit=3&properties=monitoring_location_name,monitoring_location_number,site_type_code&site_type_code=SP"
+    },
+    {
+      "type": "text/html",
+      "rel": "alternate",
+      "title": "This document as HTML",
+      "href": "https://api.waterdata.usgs.gov/ogcapi/v0/collections/monitoring-locations/items?f=html&bbox=-106.2,39.4,-105.8,39.7&limit=3&properties=monitoring_location_name,monitoring_location_number,site_type_code&site_type_code=SP"
+    },
+    {
+      "type": "text/csv; charset=utf-8",
+      "rel": "alternate",
+      "title": "This document as CSV",
+      "href": "https://api.waterdata.usgs.gov/ogcapi/v0/collections/monitoring-locations/items?f=csv&bbox=-106.2,39.4,-105.8,39.7&limit=3&properties=monitoring_location_name,monitoring_location_number,site_type_code&site_type_code=SP"
+    },
+    {
+      "type": "application/json",
+      "title": "Monitoring locations",
+      "rel": "collection",
+      "href": "https://api.waterdata.usgs.gov/ogcapi/v0/collections/monitoring-locations"
+    }
+  ],
+  "timeStamp": "2026-08-27T14:14:17.017423Z"
+}

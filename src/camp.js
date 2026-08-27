@@ -2,6 +2,7 @@
  * camp.js — Camp site enrichment for Bikepacker Navigator.
  */
 
+import { readApiField } from './apiField.js';
 import { ENRICHMENT_LIMITS, capEnrichedWaypoints } from './enrichmentLimits.js';
 import { describeError } from './errorBoundary.js';
 import { distanceFromStart, fetchOverpass, haversineDistance } from './gpx.js';
@@ -239,7 +240,9 @@ export async function fetchLandOwnership(lat, lon) {
     // ArcGIS reports a bad service or query in the body, with a 200 status.
     if (data.error) throw new Error(`BLM REST: ${data.error.message ?? 'query failed'}`);
     const attrs = data.features?.[0]?.attributes ?? {};
-    const agencyCode = attrs.ADMIN_AGENCY_CODE || attrs.ADMIN_DEPT_CODE || '';
+    const agencyCode = String(
+      readApiField(attrs, ['ADMIN_AGENCY_CODE', 'ADMIN_DEPT_CODE'], 'BLM agency code') ?? '',
+    );
     return classifyLandManager({}, agencyCode);
   } catch (err) {
     console.warn('[BPNav] Land ownership lookup failed:', describeError(err));
