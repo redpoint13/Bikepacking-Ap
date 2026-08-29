@@ -242,12 +242,13 @@ function hintWindow(trackPoints, hintIndex) {
   const distances = getOrCreateCumulativeDistances(trackPoints);
   const hintMi = distances[hintIndex] ?? 0;
   const start = firstIndexAtOrAfterMile(distances, hintMi - HINT_BACK_MI);
-  const end = firstIndexAtOrAfterMile(distances, hintMi + HINT_AHEAD_MI);
+  const endInclusive = firstIndexAtOrAfterMile(distances, hintMi + HINT_AHEAD_MI);
+  const endExclusive = Math.min(trackPoints.length, endInclusive + 1);
   // Always keep a few points either side so a very sparse track still has
   // candidates to compare, and never let the window collapse past the hint.
   return {
     start: Math.max(0, Math.min(start, hintIndex - 1)),
-    end: Math.min(trackPoints.length, Math.max(end, hintIndex + 2)),
+    end: Math.min(trackPoints.length, Math.max(endExclusive, hintIndex + 2)),
   };
 }
 
