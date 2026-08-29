@@ -44,6 +44,23 @@ describe('App header', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Riding controls
+// ---------------------------------------------------------------------------
+
+describe('Riding controls', () => {
+  it('has a GPS status line that starts hidden', () => {
+    // GPS trouble (a denied permission above all) used to be a console warning
+    // only, leaving the rider with a radar stuck at mile 0 and no explanation.
+    const status = container.querySelector('#gps-status');
+    expect(status).toBeTruthy();
+    expect(status.hidden).toBe(true);
+    expect(status.getAttribute('role')).toBe('status');
+    expect(status.getAttribute('aria-live')).toBe('polite');
+    expect(status.closest('#riding-controls')).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Resource cards
 // ---------------------------------------------------------------------------
 

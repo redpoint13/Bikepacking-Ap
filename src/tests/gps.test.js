@@ -81,3 +81,122 @@ describe('GPSManager', () => {
     manager.stop();
   });
 });
+
+describe('GPSManager route snapping', () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+
+  /**
+   * Out-and-back at a realistic recorded-GPX density: ~5 mi out, then back
+   * along a line roughly 60 ft to the east — the geometry of any lollipop
+   * loop stem or trail that parallels itself.
+   */
+  function makeOutAndBack() {
+    const N = 1000;
+    const stepLat = 0.0000724; // ~5 mi over N points
+    const pts = [];
+    for (let i = 0; i <= N; i++) pts.push([35 + i * stepLat, -111.0, 2000]);
+    for (let i = N; i >= 0; i--) pts.push([35 + i * stepLat, -111.0002, 2000]);
+    return pts;
+  }
+
+  it('keeps the reported mile on the outbound leg when GPS error nudges onto the return leg', () => {
+    const pts = makeOutAndBack();
+    const manager = new GPSManager({ ...makeRoute(), trackPoints: pts });
+
+    // A clean fix halfway up the outbound leg.
+    const first = manager._snapToRoute(35 + 500 * 0.0000724, -111.0);
+    expect(first.trackIndex).toBe(500);
+
+    // The next fix carries ~60 ft of eastward error, landing it exactly on the
+    // return leg. Snapped globally this reads as the far side of the loop;
+    // hinted off the previous fix it stays where the rider actually is.
+    const second = manager._snapToRoute(35 + 510 * 0.0000724, -111.0002);
+    expect(second.trackIndex).toBeLessThan(pts.length / 2);
+    expect(second.mileFromStart).toBeGreaterThan(first.mileFromStart);
+    expect(second.mileFromStart - first.mileFromStart).toBeLessThan(0.5);
+  });
+
+  it('falls back to a global search when the rider is nowhere near the hint', () => {
+    const pts = makeOutAndBack();
+    const manager = new GPSManager({ ...makeRoute(), trackPoints: pts });
+    manager._snapToRoute(35, -111.0); // hint near the start
+
+    // Shuttled far up the outbound leg — well outside the local window.
+    const jumped = manager._snapToRoute(35 + 900 * 0.0000724, -111.0);
+    expect(jumped.trackIndex).toBe(900);
+  });
+
+  it('publishes the snapped mile on each simulated fix', () => {
+    vi.useFakeTimers();
+    const route = makeRoute();
+    const manager = new GPSManager(route);
+    const updates = [];
+    manager.onLocationUpdate((d) => updates.push(d));
+
+    manager.startSimulation(1800, 2000);
+    vi.advanceTimersByTime(2000);
+
+    expect(updates[0]).toHaveProperty('mileFromStart');
+    expect(updates[0]).toHaveProperty('trackIndex');
+    manager.stop();
+    vi.useRealTimers();
+  });
+});
+
+describe('GPSManager status reporting', () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('reports a denied location permission instead of only logging it', async () => {
+    const watchPosition = vi.fn((_success, error) => {
+      error({ code: 1, message: 'User denied Geolocation' });
+      return 7;
+    });
+    vi.stubGlobal('navigator', { ...globalThis.navigator, geolocation: { watchPosition } });
+
+    const manager = new GPSManager(makeRoute());
+    const seen = [];
+    manager.onStatusChange((s) => seen.push(s));
+
+    await manager.startTracking();
+
+    const last = seen[seen.length - 1];
+    expect(last.state).toBe('denied');
+    expect(last.message).toMatch(/permission denied/i);
+
+    vi.unstubAllGlobals();
+  });
+
+  it('reports when no geolocation provider exists at all', async () => {
+    vi.stubGlobal('navigator', { ...globalThis.navigator, geolocation: undefined });
+
+    const manager = new GPSManager(makeRoute());
+    const seen = [];
+    manager.onStatusChange((s) => seen.push(s));
+
+    await manager.startTracking();
+
+    expect(seen[seen.length - 1].state).toBe('unsupported');
+    vi.unstubAllGlobals();
+  });
+
+  it('clears back to ok once a fix arrives', async () => {
+    const watchPosition = vi.fn((success) => {
+      success({ coords: { latitude: 34.05, longitude: -118.0, accuracy: 8 } });
+      return 9;
+    });
+    vi.stubGlobal('navigator', { ...globalThis.navigator, geolocation: { watchPosition } });
+
+    const manager = new GPSManager(makeRoute());
+    const seen = [];
+    manager.onStatusChange((s) => seen.push(s));
+
+    await manager.startTracking();
+
+    expect(seen[seen.length - 1].state).toBe('ok');
+    vi.unstubAllGlobals();
+  });
+});

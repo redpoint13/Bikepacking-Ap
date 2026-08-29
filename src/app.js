@@ -77,7 +77,7 @@ import {
   setSunsprintTargetMile,
 } from './ui/sunsprint.js';
 import { openWaypointEditorModal } from './ui/waypointEditorModal.js';
-import { on, setHTML, setProps, setStyle, setText } from './utils/dom.js';
+import { find, on, setHTML, setProps, setStyle, setText } from './utils/dom.js';
 import { enrichWaterSources } from './water.js';
 import { annotateWilderness, fetchWildernessAreas } from './wilderness.js';
 
@@ -422,6 +422,7 @@ export function renderApp(container) {
               <option value="20">20 mph (Road)</option>
             </select>
           </label>
+          <p class="gps-status" id="gps-status" role="status" aria-live="polite" hidden></p>
         </div>
 
         <!-- Planning mode view — populated from planning.js -->
@@ -1464,6 +1465,27 @@ function sanitizeWaypoints(wpts) {
   );
 }
 
+/**
+ * Surfaces GPS tracking trouble in Riding mode. A denied permission or a
+ * missing fix used to be a console warning only, which left the rider staring
+ * at a radar frozen at mile 0 with nothing explaining why.
+ *
+ * @param {HTMLElement} container
+ * @param {{ state: string, message: string }} status
+ */
+function renderGpsStatus(container, status) {
+  const el = find(container, '#gps-status');
+  if (!el) return;
+
+  // 'ok' and 'idle' are the quiet states — the radar itself is the feedback.
+  const visible = status.state !== 'ok' && status.state !== 'idle' && Boolean(status.message);
+  el.hidden = !visible;
+  if (!visible) return;
+
+  setText(container, '#gps-status', status.message);
+  el.dataset.state = status.state;
+}
+
 function applyRoute(container, route, skipEnrichment = false) {
   currentRoute = route;
 
@@ -1478,8 +1500,16 @@ function applyRoute(container, route, skipEnrichment = false) {
   radarController = new RadarController(route, gpsManager);
   if (currentMode === 'riding') radarController.start();
 
+  gpsManager.onStatusChange((status) => {
+    renderGpsStatus(container, status);
+  });
+
   gpsManager.onLocationUpdate((data) => {
-    lastCurrentMile = distanceFromStart(data.lat, data.lon, route.trackPoints);
+    // Prefer the mile the GPSManager already snapped (hinted off the previous
+    // fix) over a fresh global scan — same reason as radar.js, plus it halves
+    // the per-fix work now that both consumers share one search.
+    lastCurrentMile =
+      data.mileFromStart ?? distanceFromStart(data.lat, data.lon, route.trackPoints);
     lastPaceMph = data.paceMph;
     updateResourceCards(container, route, lastCurrentMile);
     updateSunsprintDisplay(container, route, lastCurrentMile, lastPaceMph);
