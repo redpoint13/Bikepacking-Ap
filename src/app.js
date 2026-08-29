@@ -1480,7 +1480,13 @@ function renderGpsStatus(container, status) {
   // 'ok' and 'idle' are the quiet states — the radar itself is the feedback.
   const visible = status.state !== 'ok' && status.state !== 'idle' && Boolean(status.message);
   el.hidden = !visible;
-  if (!visible) return;
+  if (!visible) {
+    // Drop the state rather than leaving the last one stranded on a hidden
+    // element, where it would go on matching the styling selectors.
+    delete el.dataset.state;
+    setText(container, '#gps-status', '');
+    return;
+  }
 
   setText(container, '#gps-status', status.message);
   el.dataset.state = status.state;

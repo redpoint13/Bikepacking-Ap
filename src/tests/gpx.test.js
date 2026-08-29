@@ -385,3 +385,33 @@ describe('applyStartOffset', () => {
     });
   });
 });
+
+describe('nearestTrackPointIndex hinted search', () => {
+  /** Dense single-leg track, ~60 points per mile. */
+  function makeTrack(n = 600) {
+    const pts = [];
+    for (let i = 0; i < n; i++) pts.push([35 + i * 0.00024, -111.0, 2000]);
+    return pts;
+  }
+
+  it('still finds the true nearest point when the hint sits at the end of the track', () => {
+    // The forward lookup runs off the end of the cumulative-distance array
+    // there, so the window has to clamp to trackPoints.length rather than
+    // truncating the tail.
+    const pts = makeTrack();
+    const last = pts.length - 1;
+    const target = pts[last];
+    expect(nearestTrackPointIndex(target[0], target[1], pts, last)).toBe(last);
+    expect(nearestTrackPointIndex(target[0], target[1], pts, last - 3)).toBe(last);
+  });
+
+  it('agrees with the unhinted scan whenever the rider is inside the window', () => {
+    const pts = makeTrack();
+    for (const i of [0, 1, 137, 400, 598, 599]) {
+      const [lat, lon] = pts[i];
+      const hinted = nearestTrackPointIndex(lat, lon, pts, Math.max(0, i - 5));
+      const global = nearestTrackPointIndex(lat, lon, pts, -1);
+      expect(hinted).toBe(global);
+    }
+  });
+});

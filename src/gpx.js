@@ -231,7 +231,12 @@ function firstIndexAtOrAfterMile(distances, targetMile) {
  *
  * @param {Array<[number, number]>} trackPoints
  * @param {number} hintIndex
- * @returns {{ start: number, end: number }} Half-open [start, end)
+ * @returns {{ start: number, end: number }} Half-open index range [start, end),
+ *   covering along-track distances [hintMi - HINT_BACK_MI, hintMi + HINT_AHEAD_MI).
+ *   Excluding a point sitting exactly on the far bound is immaterial — the
+ *   bound is a heuristic, not a boundary anything depends on. When the hint is
+ *   near the end of the track the forward lookup runs off the array and `end`
+ *   lands on trackPoints.length, so the tail is covered in full.
  */
 function hintWindow(trackPoints, hintIndex) {
   const distances = getOrCreateCumulativeDistances(trackPoints);
