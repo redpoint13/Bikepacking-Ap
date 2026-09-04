@@ -15,12 +15,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      - name: Set up Node 20
-        uses: actions/setup-node@v4
+      - name: Set up Node 24
+        uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version: '24'
           cache: 'npm'
 
       - name: Install dependencies
@@ -42,7 +42,7 @@ jobs:
         # The dist/ folder is the deployable artifact.
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist-${{ github.sha }}
           path: dist/
@@ -88,13 +88,13 @@ jobs:
 
       - name: Checkout
         if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      - name: Set up Node 20
+      - name: Set up Node 24
         if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
 
       - name: Install dependencies
@@ -107,13 +107,17 @@ jobs:
 
       - name: Deploy to Cloudflare Pages
         if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
-        uses: cloudflare/pages-action@v1
+        # cloudflare/pages-action is archived upstream -- its own description
+        # reads "DEPRECATED, please use wrangler-action" -- and last shipped in
+        # 2023, so there is no current version of it to pin. wrangler-action
+        # drives the same Pages deploy through the wrangler CLI, which moves the
+        # project name and output directory out of `with:` and into `command:`.
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          # Must match the project name you create in Cloudflare Pages dashboard.
-          # https://dash.cloudflare.com -> Workers & Pages -> Create application -> Pages
-          projectName: bikepacker-navigator
-          directory: dist
           # Wires GitHub deployments API so each deploy shows in the PR/commit UI
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          # The project name must match the one created in the Cloudflare
+          # dashboard: Workers & Pages -> Create application -> Pages.
+          command: pages deploy dist --project-name=bikepacker-navigator
