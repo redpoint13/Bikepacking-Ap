@@ -10,7 +10,11 @@
 import { Capacitor } from '@capacitor/core';
 import { Geolocation } from '@capacitor/geolocation';
 import { describeError } from './errorBoundary.js';
-import { haversineDistance } from './gpx.js';
+import {
+  getOrCreateCumulativeDistances,
+  haversineDistance,
+  nearestTrackPointIndex,
+} from './gpx.js';
 import { setKeepAwake } from './mobile.js';
 
 export class GPSManager {
@@ -26,6 +30,80 @@ export class GPSManager {
     this.callbacks = new Set();
     this.lastPos = null;
     this.lastTime = null;
+    /**
+     * Index of the track point the last fix snapped to, fed back into
+     * nearestTrackPointIndex as a search hint. Without it every fix ran a
+     * global nearest scan, which picks the geometrically closest point
+     * anywhere on the route — so on an out-and-back or a lollipop loop, a
+     * few metres of GPS error would snap the rider onto the leg running
+     * alongside and jump the reported mile by the length of the loop.
+     * -1 means "no hint yet", which is also the fallback the hinted search
+     * takes itself whenever the local window holds nothing plausible.
+     * @type {number}
+     */
+    this.lastTrackIndex = -1;
+    /**
+     * Subscribers to tracking-status changes. Location failures used to be a
+     * console.warn and nothing else, so a rider who declined the permission
+     * prompt (or rode into a spot with no fix) saw Riding mode sit at mile 0
+     * with no explanation at all.
+     * @type {Set<function({ state: string, message: string }): void>}
+     */
+    this.statusCallbacks = new Set();
+    /** @type {{ state: string, message: string }} */
+    this.status = { state: 'idle', message: '' };
+  }
+
+  /**
+   * Registers a callback for tracking-status changes, and immediately replays
+   * the current status so a late subscriber is not left blank.
+   * @param {function({ state: string, message: string }): void} callback
+   * @returns {() => void} Unsubscribe
+   */
+  onStatusChange(callback) {
+    this.statusCallbacks.add(callback);
+    try {
+      callback(this.status);
+    } catch (err) {
+      console.error('[BPNav] Error in GPS status callback:', err);
+    }
+    return () => this.statusCallbacks.delete(callback);
+  }
+
+  /**
+   * @param {'idle'|'searching'|'ok'|'simulating'|'denied'|'unavailable'|'unsupported'} state
+   * @param {string} message
+   * @private
+   */
+  _setStatus(state, message) {
+    if (this.status.state === state && this.status.message === message) return;
+    this.status = { state, message };
+    for (const cb of this.statusCallbacks) {
+      try {
+        cb(this.status);
+      } catch (err) {
+        console.error('[BPNav] Error in GPS status callback:', err);
+      }
+    }
+  }
+
+  /**
+   * Maps a browser GeolocationPositionError onto a status.
+   * @param {GeolocationPositionError} error
+   * @private
+   */
+  _setStatusFromWebError(error) {
+    // 1 PERMISSION_DENIED, 2 POSITION_UNAVAILABLE, 3 TIMEOUT
+    if (error?.code === 1) {
+      this._setStatus(
+        'denied',
+        'Location permission denied — Riding mode cannot track your position. Enable location for this site, then switch back to Riding.',
+      );
+    } else if (error?.code === 3) {
+      this._setStatus('unavailable', 'Waiting for a GPS fix — no signal yet.');
+    } else {
+      this._setStatus('unavailable', 'GPS position unavailable right now.');
+    }
   }
 
   /**
@@ -46,6 +124,27 @@ export class GPSManager {
         console.error('[BPNav] Error in GPS callback:', err);
       }
     }
+  }
+
+  /**
+   * Snaps a fix onto the route, resolving both the track index and the
+   * along-track mileage in a single search, and remembers the index so the
+   * next fix can search locally around it.
+   *
+   * @param {number} lat
+   * @param {number} lon
+   * @returns {{ trackIndex: number, mileFromStart: number }}
+   * @private
+   */
+  _snapToRoute(lat, lon) {
+    const trackPoints = this.route?.trackPoints;
+    if (!trackPoints || trackPoints.length === 0) {
+      return { trackIndex: -1, mileFromStart: 0 };
+    }
+    const trackIndex = nearestTrackPointIndex(lat, lon, trackPoints, this.lastTrackIndex);
+    this.lastTrackIndex = trackIndex;
+    const distances = getOrCreateCumulativeDistances(trackPoints);
+    return { trackIndex, mileFromStart: distances[trackIndex] ?? 0 };
   }
 
   /**
@@ -79,6 +178,7 @@ export class GPSManager {
       window.__bpnav_tracking_active = true;
     }
     await setKeepAwake(true);
+    this._setStatus('searching', 'Acquiring GPS…');
 
     if (Capacitor.isNativePlatform()) {
       try {
@@ -87,6 +187,10 @@ export class GPSManager {
           const req = await Geolocation.requestPermissions({ permissions: ['location'] });
           if (req.location !== 'granted') {
             console.warn('[BPNav] Location permission denied by user.');
+            this._setStatus(
+              'denied',
+              'Location permission denied — Riding mode cannot track your position. Grant location access in Settings, then switch back to Riding.',
+            );
             return;
           }
         }
@@ -100,12 +204,15 @@ export class GPSManager {
           (position, err) => {
             if (err) {
               console.warn('[BPNav] Native geolocation error:', describeError(err));
+              this._setStatus('unavailable', 'GPS position unavailable right now.');
               return;
             }
             if (!position?.coords) return;
             const { latitude, longitude, accuracy } = position.coords;
             const paceMph = this._calculatePace(latitude, longitude);
-            this._trigger({ lat: latitude, lon: longitude, accuracy, paceMph });
+            const snap = this._snapToRoute(latitude, longitude);
+            this._setStatus('ok', '');
+            this._trigger({ lat: latitude, lon: longitude, accuracy, paceMph, ...snap });
           },
         );
         return;
@@ -119,10 +226,13 @@ export class GPSManager {
         (position) => {
           const { latitude, longitude, accuracy } = position.coords;
           const paceMph = this._calculatePace(latitude, longitude);
-          this._trigger({ lat: latitude, lon: longitude, accuracy, paceMph });
+          const snap = this._snapToRoute(latitude, longitude);
+          this._setStatus('ok', '');
+          this._trigger({ lat: latitude, lon: longitude, accuracy, paceMph, ...snap });
         },
         (error) => {
           console.warn('[BPNav] Web geolocation error:', describeError(error));
+          this._setStatusFromWebError(error);
         },
         {
           enableHighAccuracy: true,
@@ -132,6 +242,7 @@ export class GPSManager {
       );
     } else {
       console.warn('[BPNav] Geolocation is not supported in this environment.');
+      this._setStatus('unsupported', 'This device or browser cannot provide GPS location.');
     }
   }
 
@@ -146,8 +257,10 @@ export class GPSManager {
     const points = this.route.trackPoints;
     if (!points || points.length < 2) {
       console.warn('[BPNav] Route has insufficient track points for simulation.');
+      this._setStatus('unavailable', 'Route has too few track points to simulate.');
       return;
     }
+    this._setStatus('simulating', 'Simulated ride — not using real GPS.');
 
     // Precompute cumulative distances for all track points to make snapping fast
     const cumulativeDistances = [0];
@@ -188,7 +301,17 @@ export class GPSManager {
       }
 
       const [lat, lon] = points[idx];
-      this._trigger({ lat, lon, accuracy: 5, paceMph: speedMph });
+      // The simulator already knows exactly where it is; hand the same shape
+      // the real fixes do rather than making consumers re-derive it.
+      this.lastTrackIndex = idx;
+      this._trigger({
+        lat,
+        lon,
+        accuracy: 5,
+        paceMph: speedMph,
+        trackIndex: idx,
+        mileFromStart: cumulativeDistances[idx] ?? 0,
+      });
     }, tickMs);
   }
 
@@ -201,6 +324,7 @@ export class GPSManager {
       window.__bpnav_tracking_active = false;
     }
     await setKeepAwake(false);
+    this._setStatus('searching', 'Acquiring GPS…');
 
     if (Capacitor.isNativePlatform()) {
       try {
@@ -213,11 +337,14 @@ export class GPSManager {
           (position, err) => {
             if (err) {
               console.warn('[BPNav] Native low-power geolocation error:', describeError(err));
+              this._setStatus('unavailable', 'GPS position unavailable right now.');
               return;
             }
             if (!position?.coords) return;
             const { latitude, longitude, accuracy } = position.coords;
-            this._trigger({ lat: latitude, lon: longitude, accuracy, paceMph: 10 });
+            const snap = this._snapToRoute(latitude, longitude);
+            this._setStatus('ok', '');
+            this._trigger({ lat: latitude, lon: longitude, accuracy, paceMph: 10, ...snap });
           },
         );
         return;
@@ -233,10 +360,13 @@ export class GPSManager {
       this.watchId = navigator.geolocation.watchPosition(
         (position) => {
           const { latitude, longitude, accuracy } = position.coords;
-          this._trigger({ lat: latitude, lon: longitude, accuracy, paceMph: 10 });
+          const snap = this._snapToRoute(latitude, longitude);
+          this._setStatus('ok', '');
+          this._trigger({ lat: latitude, lon: longitude, accuracy, paceMph: 10, ...snap });
         },
         (error) => {
           console.warn('[BPNav] Geolocation error:', describeError(error));
+          this._setStatusFromWebError(error);
         },
         {
           enableHighAccuracy: false,
@@ -254,6 +384,10 @@ export class GPSManager {
     if (typeof window !== 'undefined') {
       window.__bpnav_tracking_active = false;
     }
+    // Drop the search hint: the rider may be somewhere else entirely by the
+    // time tracking resumes, and a stale hint only costs a wrong first guess.
+    this.lastTrackIndex = -1;
+    this._setStatus('idle', '');
     setKeepAwake(false).catch(() => {});
 
     if (this.nativeWatchId !== null) {

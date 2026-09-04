@@ -35,7 +35,14 @@ export async function syncOfflineMap(route, onProgress) {
   // 1. Fetch style and sprites
   for (const url of styleAssets) {
     try {
-      await fetch(url, { mode: 'no-cors' });
+      // A plain CORS fetch on purpose. OpenFreeMap sends
+      // `access-control-allow-origin: *`, so `no-cors` bought nothing and cost
+      // everything: it yields an *opaque* response, the Workbox rule caches it
+      // (statuses [0, 200]), and the browser then refuses to hand an opaque
+      // response back to MapLibre's CORS-mode request. CacheFirst keeps serving
+      // that poisoned entry, so pre-downloading a route was what *broke* the
+      // offline map for every tile the map had not already fetched itself.
+      await fetch(url);
     } catch (e) {
       console.warn('Failed to fetch style asset:', url, e);
     }
@@ -53,8 +60,9 @@ export async function syncOfflineMap(route, onProgress) {
       batch.map(async ([z, x, y]) => {
         const url = `https://tiles.openfreemap.org/planet/${z}/${x}/${y}.pbf`;
         try {
-          // fetch will be intercepted by the Service Worker and cached
-          await fetch(url, { mode: 'no-cors' });
+          // fetch will be intercepted by the Service Worker and cached.
+          // CORS mode, not no-cors — see the note on the style assets above.
+          await fetch(url);
         } catch (e) {
           console.warn('Failed to fetch tile:', url, e);
         }

@@ -26,9 +26,12 @@ export class RadarController {
     this.temperature = 70; // Default to 70F
 
     // Haptic state tracking to prevent duplicate fires
+    // Keys are RouteContext waypoint types, so they must match gpx.js exactly:
+    // the camping type is `camping`, not `camp`. Keying this map (and the
+    // lookups it guards) on `camp` silently disabled every camp alert.
     this.hapticFired = {
       water: { '1.0': null, 0.3: null }, // 0.3mi ~ 500m
-      camp: { '1.0': null, 0.3: null },
+      camping: { '1.0': null, 0.3: null },
       resupply: { '1.0': null, 0.3: null },
     };
 
@@ -91,7 +94,11 @@ export class RadarController {
     }
 
     this.unsubscribeGps = this.gpsManager.onLocationUpdate((pos) => {
-      this.currentMile = distanceFromStart(pos.lat, pos.lon, this.route.trackPoints);
+      // The GPSManager already snapped this fix against the previous one, which
+      // is what keeps the mile stable where the route runs back alongside
+      // itself. Only re-derive it for callers that hand us a bare position.
+      this.currentMile =
+        pos.mileFromStart ?? distanceFromStart(pos.lat, pos.lon, this.route.trackPoints);
       this.updateUI();
       this.checkHaptics();
     });
@@ -158,7 +165,7 @@ export class RadarController {
     }
 
     // --- Camp ---
-    const nextCamp = this._getNextWaypoints('camp', 1)[0];
+    const nextCamp = this._getNextWaypoints('camping', 1)[0];
     if (nextCamp) {
       const distMi = (nextCamp.distanceFromStartMi - this.currentMile).toFixed(1);
       this.campNextEl.textContent = `${distMi} mi`;
@@ -178,7 +185,7 @@ export class RadarController {
 
   checkHaptics() {
     this._checkHapticForType('water', [1.0, 0.3]);
-    this._checkHapticForType('camp', [1.0, 0.3]);
+    this._checkHapticForType('camping', [1.0, 0.3]);
     this._checkHapticForType('resupply', [1.0, 0.3]);
   }
 
@@ -198,8 +205,7 @@ export class RadarController {
           this.hapticFired[type][threshStr] = nextWp.id;
 
           if (thresh === 1.0) {
-            const typeLabel = type === 'camp' ? 'camping' : type;
-            speak(`Approaching ${typeLabel} in 1 mile.`);
+            speak(`Approaching ${type} in 1 mile.`);
           }
         }
       }

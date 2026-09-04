@@ -189,11 +189,76 @@ export function getOrCreateCumulativeDistances(trackPoints) {
 }
 
 /**
+ * How far back and ahead of the hint the localized search looks, in miles.
+ * Backwards covers GPS jitter and a rider briefly doubling back; forwards
+ * covers a gap in fixes (pocket, tunnel, battery saver) of a few minutes at
+ * any plausible bike speed. Past that the global scan is the honest answer.
+ */
+const HINT_BACK_MI = 0.5;
+const HINT_AHEAD_MI = 3.0;
+
+/**
+ * First index whose cumulative distance is >= targetMile.
+ * @param {number[]} distances - ascending
+ * @param {number} targetMile
+ * @returns {number}
+ */
+function firstIndexAtOrAfterMile(distances, targetMile) {
+  let low = 0;
+  let high = distances.length - 1;
+  let idx = distances.length;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (distances[mid] >= targetMile) {
+      idx = mid;
+      high = mid - 1;
+    } else {
+      low = mid + 1;
+    }
+  }
+  return idx;
+}
+
+/**
+ * Bounds the localized search around a hint by along-track *distance* rather
+ * than by a count of points.
+ *
+ * A point-count window is only as wide as the track is dense. At the ~60
+ * points per mile a recorded GPX gives, +150 points is about 2.4 mi — but on a
+ * sparsely sampled track the same window reaches tens of miles ahead and
+ * swallows the very return leg the hint exists to exclude, which is exactly
+ * the out-and-back case that makes an unhinted global scan wrong.
+ *
+ * @param {Array<[number, number]>} trackPoints
+ * @param {number} hintIndex
+ * @returns {{ start: number, end: number }} Half-open index range [start, end),
+ *   covering along-track distances [hintMi - HINT_BACK_MI, hintMi + HINT_AHEAD_MI).
+ *   Excluding a point sitting exactly on the far bound is immaterial — the
+ *   bound is a heuristic, not a boundary anything depends on. When the hint is
+ *   near the end of the track the forward lookup runs off the array and `end`
+ *   lands on trackPoints.length, so the tail is covered in full.
+ */
+function hintWindow(trackPoints, hintIndex) {
+  const distances = getOrCreateCumulativeDistances(trackPoints);
+  const hintMi = distances[hintIndex] ?? 0;
+  const start = firstIndexAtOrAfterMile(distances, hintMi - HINT_BACK_MI);
+  const endInclusive = firstIndexAtOrAfterMile(distances, hintMi + HINT_AHEAD_MI);
+  const endExclusive = Math.min(trackPoints.length, endInclusive + 1);
+  // Always keep a few points either side so a very sparse track still has
+  // candidates to compare, and never let the window collapse past the hint.
+  return {
+    start: Math.max(0, Math.min(start, hintIndex - 1)),
+    end: Math.min(trackPoints.length, Math.max(endExclusive, hintIndex + 2)),
+  };
+}
+
+/**
  * Finds the index of the track point closest to a given lat/lon.
  * Uses fast equirectangular projection distance squared for high performance.
  * @param {number} lat
  * @param {number} lon
  * @param {Array<[number, number]>} trackPoints
+ * @param {number} [hintIndex=-1] - Index the previous fix snapped to, if any
  * @returns {number} Index into trackPoints
  */
 export function nearestTrackPointIndex(lat, lon, trackPoints, hintIndex = -1) {
@@ -202,8 +267,7 @@ export function nearestTrackPointIndex(lat, lon, trackPoints, hintIndex = -1) {
 
   // Fast localized search if a valid hintIndex is provided
   if (hintIndex >= 0 && hintIndex < trackPoints.length) {
-    const windowStart = Math.max(0, hintIndex - 50);
-    const windowEnd = Math.min(trackPoints.length, hintIndex + 150);
+    const { start: windowStart, end: windowEnd } = hintWindow(trackPoints, hintIndex);
     let localIdx = hintIndex;
     let localDistSq = Number.POSITIVE_INFINITY;
 

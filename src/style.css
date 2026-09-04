@@ -1135,6 +1135,36 @@ svg {
   cursor: pointer;
 }
 
+/* GPS trouble in Riding mode. Takes the full row so it never gets squeezed
+   next to the simulate controls on a phone. Red for "act now" (the app cannot
+   track you at all), amber for the states that may clear on their own. */
+.gps-status {
+  flex-basis: 100%;
+  margin: 0;
+  padding: var(--spacing-sm);
+  border-radius: var(--md-sys-shape-corner-small);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--md-sys-color-on-surface);
+  background-color: var(--md-sys-color-surface-container-high);
+  border-left: 3px solid var(--md-sys-color-outline);
+}
+
+.gps-status[data-state="denied"],
+.gps-status[data-state="unsupported"] {
+  color: var(--md-sys-color-on-error-container);
+  background-color: var(--md-sys-color-error-container);
+  border-left-color: var(--md-sys-color-error);
+}
+
+.gps-status[data-state="unavailable"],
+.gps-status[data-state="searching"] {
+  color: var(--md-sys-color-on-tertiary-container);
+  background-color: var(--md-sys-color-tertiary-container);
+  border-left-color: var(--md-sys-color-tertiary);
+}
+
 /* --------------------------------------------------------------------------
    Planning View & Controls Styling
    -------------------------------------------------------------------------- */
